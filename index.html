@@ -556,6 +556,9 @@
   }
   .field input:focus, .field textarea:focus{border-color:var(--accent);}
   .field textarea{min-height:120px; line-height:1.6; font-family:inherit;}
+  .note-body-field{flex:1;}
+  .note-body-field textarea{min-height:40vh;}
+  #noteOverlay .sheet{max-height:94vh;}
   .row-2{display:flex; gap:10px;}
   .row-2 > .field{flex:1;}
   .vis-toggle{
@@ -648,9 +651,8 @@
   <main>
     <section id="viewNotes">
       <div class="filter-chips" id="notesFilterChips">
-        <button class="chip active" data-filter="all">すべて</button>
-        <button class="chip" data-filter="public">共有</button>
-        <button class="chip" data-filter="mine">自分だけ</button>
+        <button class="chip active" data-filter="public">公開</button>
+        <button class="chip" data-filter="mine">プライベート</button>
       </div>
       <div class="whoami" id="whoamiHint">ログイン中: <span id="whoamiName">未ログイン</span>(タップでアカウント確認)</div>
       <div class="notes-grid" id="notesGrid"></div>
@@ -663,9 +665,8 @@
 
     <section id="viewTasks" hidden>
       <div class="filter-chips" id="tasksFilterChips">
-        <button class="chip active" data-filter="all">すべて</button>
-        <button class="chip" data-filter="mine">自分の担当</button>
-        <button class="chip" data-filter="requested">自分の依頼</button>
+        <button class="chip active" data-filter="mine">自分のタスク</button>
+        <button class="chip" data-filter="requested">依頼した分</button>
       </div>
       <div class="task-section">
         <div class="section-title" id="openTitle"><span class="chev">▾</span><span>未完了</span><span id="openCount"></span></div>
@@ -697,24 +698,11 @@
       <label for="noteTitleInput">タイトル</label>
       <input id="noteTitleInput" type="text" maxlength="120" placeholder="例）来月の展示会について">
     </div>
-    <div class="field">
+    <div class="field note-body-field">
       <label for="noteBodyInput">本文</label>
       <textarea id="noteBodyInput" placeholder="共有しておきたい内容を書きましょう"></textarea>
     </div>
-    <div class="field">
-      <label>公開範囲</label>
-      <div class="vis-toggle" id="noteVisToggle">
-        <button type="button" class="vis-btn active" data-vis="public">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c4.97-3 8-7.58 8-12A8 8 0 1 0 4 9c0 4.42 3.03 9 8 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
-          みんなに共有
-        </button>
-        <button type="button" class="vis-btn" data-vis="private">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-          自分だけ
-        </button>
-      </div>
-      <div class="helptext">「自分だけ」は自分のアカウントでログインしたときだけ見られます。他の人には表示されません。</div>
-    </div>
+    <label class="toggle-done"><input type="checkbox" id="noteVisInput" checked> 公開する(チェックを外すと自分だけに表示)</label>
     <div class="helptext" id="noteMetaText"></div>
     <div class="sheet-actions">
       <button class="btn danger" id="noteDeleteBtn" hidden>削除</button>
@@ -733,16 +721,10 @@
       <label for="taskTitleInput">タスク内容</label>
       <input id="taskTitleInput" type="text" maxlength="120" placeholder="例）請求書を送付する">
     </div>
-    <div class="row-2">
-      <div class="field">
-        <label for="taskAssigneeInput">担当者</label>
-        <input id="taskAssigneeInput" type="text" list="assigneeList" maxlength="40" placeholder="例）社長">
-        <datalist id="assigneeList"></datalist>
-      </div>
-      <div class="field">
-        <label for="taskDueInput">期限</label>
-        <input id="taskDueInput" type="date">
-      </div>
+    <div class="field">
+      <label for="taskAssigneeInput">担当者</label>
+      <input id="taskAssigneeInput" type="text" list="assigneeList" maxlength="40" placeholder="例）社長">
+      <datalist id="assigneeList"></datalist>
     </div>
     <div class="helptext" id="taskAssigneeHelp">自分以外の名前を入れると、その人にタスクを依頼できます（相手がすでにアカウント登録済みの名前である必要があります）。</div>
     <div class="field">
@@ -850,10 +832,6 @@ const db = getFirestore(fbApp);
     });
   }
   function nowIso(){ return new Date().toISOString(); }
-  function todayStr(){
-    var d = new Date();
-    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-  }
   function fmtRelative(iso){
     if(!iso) return "";
     var t = new Date(iso).getTime();
@@ -868,22 +846,6 @@ const db = getFirestore(fbApp);
     if(day < 7) return day + "日前";
     var d = new Date(t);
     return (d.getMonth()+1)+"/"+d.getDate();
-  }
-  var WD = ["日","月","火","水","木","金","土"];
-  function fmtDue(dateStr){
-    if(!dateStr) return "";
-    var parts = dateStr.split("-");
-    if(parts.length!==3) return dateStr;
-    var d = new Date(+parts[0], +parts[1]-1, +parts[2]);
-    return (+parts[1])+"/"+(+parts[2])+"("+WD[d.getDay()]+")";
-  }
-  function isOverdue(dateStr, done){
-    if(!dateStr || done) return false;
-    return dateStr < todayStr();
-  }
-  function isDueToday(dateStr, done){
-    if(!dateStr || done) return false;
-    return dateStr === todayStr();
   }
   function highlight(text, q){
     if(!q) return esc(text);
@@ -904,9 +866,8 @@ const db = getFirestore(fbApp);
   var profilesMap = new Map(); // uid -> name
   var currentTab = "notes";
   var searchQuery = "";
-  var notesFilter = "all";
-  var noteVisDraft = "public";
-  var tasksFilter = "all";
+  var notesFilter = "public";
+  var tasksFilter = "mine";
   var editingNoteId = null;
   var editingTaskId = null;
   var connTimer = null;
@@ -1052,16 +1013,11 @@ const db = getFirestore(fbApp);
   }
 
   function taskRowHtml(id, t){
-    var due = t.dueDate ? fmtDue(t.dueDate) : "";
-    var overdue = isOverdue(t.dueDate, t.done);
-    var dueToday = isDueToday(t.dueDate, t.done);
-    var dueClass = overdue ? "overdue" : (dueToday ? "today" : "");
     var meta = "";
     if(t.authorName && t.assigneeName && t.authorUid !== t.assigneeUid){
       meta += '<span class="pill from">'+esc(t.authorName)+'より</span>';
     }
     if(t.assigneeName) meta += '<span class="pill assignee">'+esc(t.assigneeName)+'</span>';
-    if(due) meta += '<span class="pill due '+dueClass+'">'+(overdue?"期限超過 ":"")+due+'</span>';
     var mine = isMineUid(t.assigneeUid) ? " assigned-to-me" : "";
     return '<div class="task-row'+(t.done?' is-done':'')+mine+'" data-id="'+id+'">' +
       '<button class="task-check'+(t.done?' done':'')+'" data-id="'+id+'" aria-label="完了にする">' +
@@ -1170,10 +1126,8 @@ const db = getFirestore(fbApp);
           '<div class="result-snippet">'+highlight(snippet, searchQuery)+'</div>' +
           '</div>';
       } else {
-        var due = r.data.dueDate ? fmtDue(r.data.dueDate) : "";
         var bits = [];
         if(r.data.assigneeName) bits.push(esc(r.data.assigneeName));
-        if(due) bits.push(due);
         if(r.data.done) bits.push("完了");
         return '<div class="result-row" data-type="task" data-id="'+r.id+'">' +
           '<div class="result-top"><span class="pill type-task">タスク</span><span class="result-title">'+highlight(r.data.title||"(無題)", searchQuery)+'</span></div>' +
@@ -1192,20 +1146,13 @@ const db = getFirestore(fbApp);
   }
 
   /* ---------------- editors ---------------- */
-  function setNoteVis(v){
-    noteVisDraft = v;
-    document.querySelectorAll("#noteVisToggle .vis-btn").forEach(function(b){
-      b.classList.toggle("active", b.dataset.vis === v);
-    });
-  }
-
   function openNoteEditor(id){
     editingNoteId = id || null;
     var n = id ? notesMap.get(id) : null;
     $("noteSheetTitle").textContent = id ? "メモを編集" : "新しいメモ";
     $("noteTitleInput").value = n ? n.title || "" : "";
     $("noteBodyInput").value = n ? n.body || "" : "";
-    setNoteVis(n && n.visibility === "private" ? "private" : "public");
+    $("noteVisInput").checked = !(n && n.visibility === "private");
     $("noteDeleteBtn").hidden = !id;
     $("noteMetaText").textContent = n ? (n.authorName||"") + " が作成 ・ 更新: " + fmtRelative(n.updatedAt) : "";
     $("noteOverlay").classList.add("show");
@@ -1219,7 +1166,6 @@ const db = getFirestore(fbApp);
     $("taskSheetTitle").textContent = id ? "タスクを編集" : "新しいタスク";
     $("taskTitleInput").value = t ? t.title || "" : "";
     $("taskAssigneeInput").value = t ? t.assigneeName || "" : "";
-    $("taskDueInput").value = t ? t.dueDate || "" : "";
     $("taskDetailInput").value = t ? t.detail || "" : "";
     $("taskDoneInput").checked = t ? !!t.done : false;
     $("taskDeleteBtn").hidden = !id;
@@ -1242,14 +1188,15 @@ const db = getFirestore(fbApp);
     if(!title && !body) { closeNoteEditor(); return; }
     ensureAccount(function(){
       var ts = nowIso();
+      var visibility = $("noteVisInput").checked ? "public" : "private";
       if(editingNoteId){
         updateDoc(doc(db,"notes",editingNoteId), {
-          title: title, body: body, visibility: noteVisDraft,
+          title: title, body: body, visibility: visibility,
           ownerUid: currentUid, ownerName: userName, updatedAt: ts
         }).catch(function(){});
       } else {
         addDoc(collection(db,"notes"), {
-          title: title, body: body, visibility: noteVisDraft,
+          title: title, body: body, visibility: visibility,
           authorUid: currentUid, authorName: userName,
           ownerUid: currentUid, ownerName: userName,
           order: Date.now(), createdAt: ts, updatedAt: ts
@@ -1273,7 +1220,6 @@ const db = getFirestore(fbApp);
         title: title,
         assigneeName: assigneeName,
         assigneeUid: lookupUidByName(assigneeName),
-        dueDate: $("taskDueInput").value || "",
         detail: $("taskDetailInput").value.trim(),
         done: $("taskDoneInput").checked,
         updatedAt: ts
@@ -1349,9 +1295,6 @@ const db = getFirestore(fbApp);
       });
       renderTasks();
     });
-  });
-  document.querySelectorAll("#noteVisToggle .vis-btn").forEach(function(b){
-    b.addEventListener("click", function(){ setNoteVis(b.dataset.vis); });
   });
 
   $("noteSaveBtn").addEventListener("click", saveNote);
@@ -1571,7 +1514,7 @@ const db = getFirestore(fbApp);
         tx.set(taskRef, {
           title: "このタスクをタップして完了にしてみる",
           detail: "チェックをつけると「完了」に移動します。",
-          assigneeUid: "", assigneeName: "", dueDate: "", done: false,
+          assigneeUid: "", assigneeName: "", done: false,
           authorUid: uid, authorName: name, order: Date.now(), createdAt: ts, updatedAt: ts
         });
         tx.set(metaRef, { seeded: true, seededAt: ts });
