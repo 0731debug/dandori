@@ -651,8 +651,8 @@
     </div>
 
     <div class="tabs" id="tabs">
-      <button class="tab-btn active" data-tab="notes">メモ <span class="cnt" id="cntNotes">0</span></button>
       <button class="tab-btn" data-tab="tasks">タスク <span class="cnt" id="cntTasks">0</span></button>
+      <button class="tab-btn active" data-tab="notes">メモ <span class="cnt" id="cntNotes">0</span></button>
     </div>
     <div class="search-heading" id="searchHeading" hidden></div>
   </header>
@@ -919,6 +919,12 @@ const db = getFirestore(fbApp);
     });
     $("viewNotes").hidden = tab !== "notes" || !!searchQuery;
     $("viewTasks").hidden = tab !== "tasks" || !!searchQuery;
+    if(tab === "tasks"){
+      // Always land on "未完了" expanded, regardless of whether it was
+      // collapsed the last time this tab was open.
+      $("openTitle").classList.remove("collapsed");
+      $("openList").classList.remove("collapsed");
+    }
   }
 
   function renderAll(){
