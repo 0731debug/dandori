@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>だんどり</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2333517A'/%3E%3Cpath d='M7 12l3 3 7-7' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#EEF1F6;
+    --surface:#FFFFFF;
+    --surface-2:#E3E7EF;
+    --border:#D5DAE3;
+    --ink:#1B2233;
+    --ink-muted:#626B80;
+    --ink-faint:#9099AC;
+    --accent:#33517A;
+    --accent-strong:#25344C;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#E4EAF3;
+    --task-accent:#2E6E5D;
+    --task-soft:#DCEEE8;
+    --warn:#B4530E;
+    --warn-soft:#FBE7D8;
+    --success:#2F7D46;
+    --success-soft:#DFF0E2;
+    --shadow: 0 1px 2px rgba(27,34,51,.06), 0 6px 20px rgba(27,34,51,.08);
+    --radius-card: 14px;
+    --radius-pill: 999px;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#11151D;
+      --surface:#1A2029;
+      --surface-2:#222A36;
+      --border:#2E3746;
+      --ink:#E7EAF0;
+      --ink-muted:#A2ABBC;
+      --ink-faint:#6B7688;
+      --accent:#7FA1D6;
+      --accent-strong:#9BB8E4;
+      --accent-ink:#0F1620;
+      --accent-soft:#233047;
+      --task-accent:#6FC2AA;
+      --task-soft:#1D3A32;
+      --warn:#E08A4C;
+      --warn-soft:#3A2717;
+      --success:#7BC490;
+      --success-soft:#1E3324;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#11151D;
+    --surface:#1A2029;
+    --surface-2:#222A36;
+    --border:#2E3746;
+    --ink:#E7EAF0;
+    --ink-muted:#A2ABBC;
+    --ink-faint:#6B7688;
+    --accent:#7FA1D6;
+    --accent-strong:#9BB8E4;
+    --accent-ink:#0F1620;
+    --accent-soft:#233047;
+    --task-accent:#6FC2AA;
+    --task-soft:#1D3A32;
+    --warn:#E08A4C;
+    --warn-soft:#3A2717;
+    --success:#7BC490;
+    --success-soft:#1E3324;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand,.tab-btn,.fab,.section-title{
+    font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+  }
+  button{font-family:inherit;}
+  input,textarea{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+  [hidden]{display:none !important;}
+
+  /* ---------- layout shell ---------- */
+  .shell{
+    max-width:760px;
+    margin-inline:auto;
+    padding-inline:16px;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));
+  }
+
+  header.top{
+    position:sticky;
+    top:env(safe-area-inset-top,0px);
+    z-index:20;
+    background:var(--bg);
+    padding-top:14px;
+    padding-bottom:10px;
+  }
+  .topbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    flex-shrink:0;
+  }
+  .brand .mark{
+    font-weight:900;
+    font-size:21px;
+    letter-spacing:.02em;
+    color:var(--ink);
+  }
+  .brand .tagline{
+    display:none;
+    font-size:11px;
+    color:var(--ink-faint);
+    font-family:"Noto Sans JP",sans-serif;
+  }
+  @media (min-width:560px){ .brand .tagline{ display:inline; } }
+
+  .search-wrap{
+    flex:1;
+    position:relative;
+    min-width:0;
+  }
+  .search-wrap input{
+    width:100%;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+    border-radius:var(--radius-pill);
+    padding:9px 14px 9px 34px;
+    font-size:14px;
+    outline:none;
+    transition:border-color .15s ease;
+  }
+  .search-wrap input:focus{border-color:var(--accent);}
+  .search-wrap svg{
+    position:absolute;
+    left:11px; top:50%;
+    transform:translateY(-50%);
+    width:15px; height:15px;
+    color:var(--ink-faint);
+    pointer-events:none;
+  }
+  .search-clear{
+    position:absolute;
+    right:6px; top:50%;
+    transform:translateY(-50%);
+    border:none; background:transparent;
+    color:var(--ink-faint);
+    width:24px; height:24px;
+    border-radius:50%;
+    cursor:pointer;
+    display:none;
+    align-items:center;justify-content:center;
+    font-size:16px;
+  }
+  .search-wrap.has-value .search-clear{display:flex;}
+
+  .user-chip{
+    flex-shrink:0;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+    border-radius:var(--radius-pill);
+    padding:7px 12px 7px 8px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size:13px;
+    cursor:pointer;
+    max-width:110px;
+  }
+  .user-chip .dot{
+    width:20px;height:20px;border-radius:50%;
+    background:var(--accent);
+    color:var(--accent-ink);
+    font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .user-chip span.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  .tabs{
+    display:flex;
+    gap:4px;
+    background:var(--surface-2);
+    border-radius:var(--radius-pill);
+    padding:3px;
+    margin-top:12px;
+  }
+  .tab-btn{
+    flex:1;
+    border:none;
+    background:transparent;
+    padding:8px 10px;
+    border-radius:var(--radius-pill);
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--ink-muted);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    transition:background .15s ease,color .15s ease;
+  }
+  .tab-btn .cnt{
+    font-size:11px;
+    font-weight:600;
+    opacity:.75;
+    font-variant-numeric:tabular-nums;
+  }
+  .tab-btn.active{
+    background:var(--surface);
+    color:var(--ink);
+    box-shadow:var(--shadow);
+  }
+  .tab-btn[data-tab="notes"].active{color:var(--accent);}
+  .tab-btn[data-tab="tasks"].active{color:var(--task-accent);}
+
+  .search-heading{
+    margin-top:14px;
+    font-size:12px;
+    color:var(--ink-faint);
+    font-weight:600;
+  }
+
+  /* ---------- banner ---------- */
+  .banner{
+    margin-top:10px;
+    padding:10px 12px;
+    border-radius:10px;
+    background:var(--warn-soft);
+    color:var(--warn);
+    font-size:12.5px;
+    display:none;
+    align-items:center;
+    gap:8px;
+  }
+  .banner.show{display:flex;}
+
+  /* ---------- notes grid ---------- */
+  main{margin-top:14px;}
+  .filter-chips{
+    display:flex;
+    gap:6px;
+    margin-bottom:12px;
+  }
+  .chip{
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink-muted);
+    border-radius:var(--radius-pill);
+    padding:6px 12px;
+    font-size:12.5px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .chip.active{
+    background:var(--accent-soft);
+    border-color:var(--accent-soft);
+    color:var(--accent-strong);
+  }
+  .whoami{
+    font-size:11px;
+    color:var(--ink-faint);
+    margin-bottom:10px;
+    cursor:pointer;
+    display:inline-block;
+  }
+  .whoami span{font-weight:700; color:var(--ink-muted);}
+  .whoami:hover{color:var(--ink-muted);}
+  .notes-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+    gap:10px;
+  }
+  .note-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius-card);
+    padding:14px;
+    cursor:pointer;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    min-height:108px;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .note-card:hover{box-shadow:var(--shadow); transform:translateY(-1px);}
+  .note-card.sortable-chosen{box-shadow:var(--shadow); transform:scale(1.02);}
+  .note-card.sortable-ghost{opacity:.35;}
+  .n-head{display:flex; align-items:flex-start; gap:6px;}
+  .note-card .n-title{
+    flex:1; min-width:0;
+    font-weight:700;
+    font-size:14.5px;
+    line-height:1.4;
+    color:var(--ink);
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  .drag-handle{
+    position:relative;
+    flex-shrink:0;
+    width:18px;height:18px;
+    color:var(--ink-faint);
+    cursor:grab;
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .drag-handle::before{content:""; position:absolute; inset:-9px;}
+  .drag-handle:active{cursor:grabbing; color:var(--ink-muted);}
+  .drag-handle svg{width:18px;height:18px;}
+  .task-row .drag-handle{align-self:center; margin-left:auto;}
+  .note-card .n-body{
+    font-size:12.5px;
+    color:var(--ink-muted);
+    line-height:1.6;
+    display:-webkit-box;
+    -webkit-line-clamp:3;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+    flex:1;
+    white-space:pre-wrap;
+  }
+  .note-card .n-foot{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:11px;
+    color:var(--ink-faint);
+    margin-top:2px;
+  }
+  .note-card .n-foot .foot-left{
+    display:flex; align-items:center; gap:5px;
+    overflow:hidden;
+  }
+  .lock-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:3px;
+    color:var(--ink-faint);
+    flex-shrink:0;
+  }
+  .lock-badge svg{width:10px;height:10px;}
+
+  /* ---------- task list ---------- */
+  .task-section + .task-section{margin-top:18px;}
+  .section-title{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink-muted);
+    letter-spacing:.02em;
+    margin-bottom:8px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .section-title .chev{transition:transform .15s ease; font-size:10px;}
+  .section-title.collapsed .chev{transform:rotate(-90deg);}
+  .task-list{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .task-list.collapsed{display:none;}
+  .task-row{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:11px 12px;
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    cursor:pointer;
+  }
+  .task-row:hover{box-shadow:var(--shadow);}
+  .task-row.assigned-to-me{border-left:3px solid var(--task-accent); padding-left:9px;}
+  .task-row.sortable-chosen{box-shadow:var(--shadow);}
+  .task-row.sortable-ghost{opacity:.35;}
+  .task-row.is-done .drag-handle{visibility:hidden;}
+  .task-check{
+    position:relative;
+    width:24px;height:24px;
+    border-radius:7px;
+    border:2px solid var(--ink-faint);
+    flex-shrink:0;
+    margin-top:0;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--surface);
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  .task-check::before{
+    content:"";
+    position:absolute;
+    inset:-12px;
+  }
+  .task-check:hover{border-color:var(--task-accent);}
+  .task-check:active{transform:scale(.92);}
+  .task-check.done{background:var(--task-accent); border-color:var(--task-accent);}
+  .task-check svg{width:14px;height:14px;color:#fff;display:none;}
+  .task-check.done svg{display:block;}
+  .task-main{flex:1; min-width:0;}
+  .task-title{
+    font-size:14px; font-weight:600; color:var(--ink);
+    word-break:break-word;
+  }
+  .task-row.is-done .task-title{color:var(--ink-faint); text-decoration:line-through;}
+  .task-meta{
+    display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;
+  }
+  .pill{
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:var(--radius-pill);
+    background:var(--surface-2);
+    color:var(--ink-muted);
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  .pill.assignee{background:var(--accent-soft); color:var(--accent-strong);}
+  .pill.from{background:transparent; border:1px dashed var(--border); color:var(--ink-faint);}
+  .pill.due{background:var(--surface-2); color:var(--ink-muted);}
+  .pill.due.overdue{background:var(--warn-soft); color:var(--warn);}
+  .pill.due.today{background:var(--task-soft); color:var(--task-accent);}
+  .pill.type-note{background:var(--accent-soft); color:var(--accent-strong);}
+  .pill.type-task{background:var(--task-soft); color:var(--task-accent);}
+
+  .empty{
+    text-align:center;
+    padding:52px 20px;
+    color:var(--ink-faint);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+  }
+  .empty svg{width:34px;height:34px;opacity:.5;}
+  .empty .e-title{font-size:14px;font-weight:700;color:var(--ink-muted);}
+  .empty .e-sub{font-size:12.5px; max-width:280px;}
+
+  /* ---------- search results ---------- */
+  .result-row{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    cursor:pointer;
+    margin-bottom:8px;
+  }
+  .result-row:hover{box-shadow:var(--shadow);}
+  .result-top{display:flex;align-items:center;gap:8px;}
+  .result-title{font-weight:700;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .result-snippet{font-size:12px;color:var(--ink-muted);line-height:1.5;white-space:pre-wrap;}
+  .result-snippet mark{background:var(--accent-soft);color:var(--ink);border-radius:2px;}
+
+  /* ---------- fab ---------- */
+  .fab{
+    position:fixed;
+    right:20px;
+    bottom:calc(22px + env(safe-area-inset-bottom,0px));
+    width:54px;height:54px;
+    border-radius:50%;
+    border:none;
+    background:var(--ink);
+    color:var(--bg);
+    font-size:26px;
+    line-height:1;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    z-index:25;
+    transition:background .15s ease, transform .1s ease;
+  }
+  .fab:active{transform:scale(.94);}
+  body[data-active="notes"] .fab{background:var(--accent);color:var(--accent-ink);}
+  body[data-active="tasks"] .fab{background:var(--task-accent);color:#fff;}
+
+  /* ---------- overlay / sheet ---------- */
+  .overlay{
+    position:fixed; inset:0;
+    background:rgba(15,18,26,.45);
+    display:none;
+    align-items:flex-end;
+    justify-content:center;
+    z-index:50;
+  }
+  .overlay.show{display:flex;}
+  @media (min-width:640px){ .overlay{align-items:center;} }
+
+  .sheet{
+    background:var(--surface);
+    width:100%;
+    max-width:520px;
+    max-height:88vh;
+    overflow-y:auto;
+    border-radius:20px 20px 0 0;
+    padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  @media (min-width:640px){ .sheet{border-radius:18px; padding:22px;} }
+
+  .sheet-handle{
+    width:36px;height:4px;border-radius:2px;
+    background:var(--border);
+    margin:0 auto 2px;
+  }
+  @media (min-width:640px){ .sheet-handle{display:none;} }
+
+  .sheet h3{margin:0; font-size:16px;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:11.5px; font-weight:700; color:var(--ink-muted);}
+  .field input[type=text], .field input[type=date], .field input[type=email], .field input[type=password], .field textarea, .field input:not([type]){
+    border:1px solid var(--border);
+    background:var(--bg);
+    color:var(--ink);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:14.5px;
+    outline:none;
+    width:100%;
+    resize:none;
+  }
+  .field input:focus, .field textarea:focus{border-color:var(--accent);}
+  .field textarea{min-height:120px; line-height:1.6; font-family:inherit;}
+  .row-2{display:flex; gap:10px;}
+  .row-2 > .field{flex:1;}
+  .vis-toggle{
+    display:flex;
+    gap:6px;
+    background:var(--surface-2);
+    border-radius:11px;
+    padding:3px;
+  }
+  .vis-btn{
+    flex:1;
+    border:none;
+    background:transparent;
+    color:var(--ink-muted);
+    border-radius:9px;
+    padding:9px 8px;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+  }
+  .vis-btn svg{width:13px;height:13px;}
+  .vis-btn.active{background:var(--surface); color:var(--ink); box-shadow:var(--shadow);}
+  .toggle-done{
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; color:var(--ink-muted); font-weight:600;
+    cursor:pointer;
+  }
+  .toggle-done input{width:16px;height:16px;}
+
+  .sheet-actions{
+    display:flex; gap:8px; margin-top:6px;
+    padding-top:12px;
+    border-top:1px solid var(--border);
+  }
+  .btn{
+    border:none;
+    border-radius:11px;
+    padding:11px 16px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    flex:1;
+  }
+  .btn.primary{background:var(--ink); color:var(--bg);}
+  body[data-active="notes"] .btn.primary{background:var(--accent); color:var(--accent-ink);}
+  body[data-active="tasks"] .btn.primary{background:var(--task-accent); color:#fff;}
+  .btn.ghost{background:var(--surface-2); color:var(--ink);}
+  .btn.danger{background:var(--warn-soft); color:var(--warn); flex:0 0 auto;}
+  .btn[disabled]{opacity:.6; cursor:default;}
+
+  .helptext{font-size:11px; color:var(--ink-faint);}
+  .helptext.link{cursor:pointer; text-decoration:underline; color:var(--ink-muted);}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <div class="topbar">
+      <div class="brand">
+        <span class="mark">だんどり</span>
+        <span class="tagline">メモとタスクをチームでリアルタイムに</span>
+      </div>
+      <div class="search-wrap" id="searchWrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="searchInput" type="text" placeholder="メモ・タスクを検索" autocomplete="off">
+        <button class="search-clear" id="searchClear" aria-label="検索をクリア">×</button>
+      </div>
+      <button class="user-chip" id="userChip" title="アカウント">
+        <span class="dot" id="userDot">?</span>
+        <span class="name" id="userName">未ログイン</span>
+      </button>
+    </div>
+
+    <div class="banner" id="connBanner">
+      <span>⚠️</span><span>データベースに接続できません。ページを再読み込みしてください。</span>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="notes">メモ <span class="cnt" id="cntNotes">0</span></button>
+      <button class="tab-btn" data-tab="tasks">タスク <span class="cnt" id="cntTasks">0</span></button>
+    </div>
+    <div class="search-heading" id="searchHeading" hidden></div>
+  </header>
+
+  <main>
+    <section id="viewNotes">
+      <div class="filter-chips" id="notesFilterChips">
+        <button class="chip active" data-filter="all">すべて</button>
+        <button class="chip" data-filter="public">共有</button>
+        <button class="chip" data-filter="mine">自分だけ</button>
+      </div>
+      <div class="whoami" id="whoamiHint">ログイン中: <span id="whoamiName">未ログイン</span>(タップでアカウント確認)</div>
+      <div class="notes-grid" id="notesGrid"></div>
+      <div class="empty" id="notesEmpty" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg>
+        <div class="e-title">まだメモがありません</div>
+        <div class="e-sub">右下の + から、共有しておきたいことをメモしましょう。</div>
+      </div>
+    </section>
+
+    <section id="viewTasks" hidden>
+      <div class="filter-chips" id="tasksFilterChips">
+        <button class="chip active" data-filter="all">すべて</button>
+        <button class="chip" data-filter="mine">自分の担当</button>
+        <button class="chip" data-filter="requested">自分の依頼</button>
+      </div>
+      <div class="task-section">
+        <div class="section-title" id="openTitle"><span class="chev">▾</span><span>未完了</span><span id="openCount"></span></div>
+        <div class="task-list" id="openList"></div>
+      </div>
+      <div class="task-section" id="doneSection" hidden>
+        <div class="section-title collapsed" id="doneTitle"><span class="chev">▾</span><span>完了</span><span id="doneCount"></span></div>
+        <div class="task-list collapsed" id="doneList"></div>
+      </div>
+      <div class="empty" id="tasksEmpty" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+        <div class="e-title">タスクはありません</div>
+        <div class="e-sub">右下の + から、期限や担当者を決めてタスクを作成できます。</div>
+      </div>
+    </section>
+
+    <section id="viewSearch" hidden></section>
+  </main>
+</div>
+
+<button class="fab" id="fabAdd" aria-label="追加">+</button>
+
+<!-- Note editor -->
+<div class="overlay" id="noteOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h3 id="noteSheetTitle">新しいメモ</h3>
+    <div class="field">
+      <label for="noteTitleInput">タイトル</label>
+      <input id="noteTitleInput" type="text" maxlength="120" placeholder="例）来月の展示会について">
+    </div>
+    <div class="field">
+      <label for="noteBodyInput">本文</label>
+      <textarea id="noteBodyInput" placeholder="共有しておきたい内容を書きましょう"></textarea>
+    </div>
+    <div class="field">
+      <label>公開範囲</label>
+      <div class="vis-toggle" id="noteVisToggle">
+        <button type="button" class="vis-btn active" data-vis="public">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c4.97-3 8-7.58 8-12A8 8 0 1 0 4 9c0 4.42 3.03 9 8 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          みんなに共有
+        </button>
+        <button type="button" class="vis-btn" data-vis="private">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          自分だけ
+        </button>
+      </div>
+      <div class="helptext">「自分だけ」は自分のアカウントでログインしたときだけ見られます。他の人には表示されません。</div>
+    </div>
+    <div class="helptext" id="noteMetaText"></div>
+    <div class="sheet-actions">
+      <button class="btn danger" id="noteDeleteBtn" hidden>削除</button>
+      <button class="btn ghost" id="noteCancelBtn">キャンセル</button>
+      <button class="btn primary" id="noteSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task editor -->
+<div class="overlay" id="taskOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h3 id="taskSheetTitle">新しいタスク</h3>
+    <div class="field">
+      <label for="taskTitleInput">タスク内容</label>
+      <input id="taskTitleInput" type="text" maxlength="120" placeholder="例）請求書を送付する">
+    </div>
+    <div class="row-2">
+      <div class="field">
+        <label for="taskAssigneeInput">担当者</label>
+        <input id="taskAssigneeInput" type="text" list="assigneeList" maxlength="40" placeholder="例）社長">
+        <datalist id="assigneeList"></datalist>
+      </div>
+      <div class="field">
+        <label for="taskDueInput">期限</label>
+        <input id="taskDueInput" type="date">
+      </div>
+    </div>
+    <div class="helptext" id="taskAssigneeHelp">自分以外の名前を入れると、その人にタスクを依頼できます（相手がすでにアカウント登録済みの名前である必要があります）。</div>
+    <div class="field">
+      <label for="taskDetailInput">メモ（任意）</label>
+      <textarea id="taskDetailInput" placeholder="補足があれば"></textarea>
+    </div>
+    <label class="toggle-done"><input type="checkbox" id="taskDoneInput"> 完了にする</label>
+    <div class="helptext" id="taskMetaText"></div>
+    <div class="sheet-actions">
+      <button class="btn danger" id="taskDeleteBtn" hidden>削除</button>
+      <button class="btn ghost" id="taskCancelBtn">キャンセル</button>
+      <button class="btn primary" id="taskSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Account: login / signup, or manage / logout when already signed in -->
+<div class="overlay" id="nameOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div id="acctLoggedOutView">
+      <div class="vis-toggle" id="acctModeToggle">
+        <button type="button" class="vis-btn active" data-mode="login">ログイン</button>
+        <button type="button" class="vis-btn" data-mode="signup">新規登録</button>
+      </div>
+      <div class="field" id="acctNameField">
+        <label for="acctNameInput">表示名</label>
+        <input id="acctNameInput" type="text" maxlength="20" placeholder="例）佐藤" autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="acctEmailInput">メールアドレス</label>
+        <input id="acctEmailInput" type="email" placeholder="you@example.com" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="acctPwInput">パスワード</label>
+        <input id="acctPwInput" type="password" maxlength="60" placeholder="6文字以上" autocomplete="current-password">
+      </div>
+      <div class="helptext">メールアドレスとパスワードでログインします。同じアカウントでログインすれば、PCとスマホなど別の端末からでも同じ「自分」として使えます。</div>
+      <div class="helptext link" id="acctForgot">パスワードをお忘れの方はこちら</div>
+      <div class="helptext" id="acctError" hidden></div>
+      <div class="sheet-actions">
+        <button class="btn primary" id="acctSubmitBtn" style="flex:1;">ログイン</button>
+      </div>
+    </div>
+    <div id="acctLoggedInView" hidden>
+      <h3>アカウント</h3>
+      <div class="helptext">現在「<span id="acctCurrentName"></span>」としてログインしています(<span id="acctCurrentEmail"></span>)。</div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="acctCloseBtn" style="flex:1;">閉じる</button>
+        <button class="btn danger" id="acctLogoutBtn">ログアウト</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.7/Sortable.min.js"></script>
+<script type="module">
+"use strict";
+
+/* ---------------- Firebase ---------------- */
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@12.19.0/app/+esm";
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  onAuthStateChanged, signOut, sendPasswordResetEmail, updateProfile
+} from "https://cdn.jsdelivr.net/npm/firebase@12.19.0/auth/+esm";
+import {
+  getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where, getDoc, runTransaction
+} from "https://cdn.jsdelivr.net/npm/firebase@12.19.0/firestore/+esm";
+
+// Public, non-secret client identifiers for the "memo" Firebase project.
+// Access control is enforced by Firebase Auth + Firestore security rules,
+// not by keeping this object hidden.
+const firebaseConfig = {
+  apiKey: "AIzaSyCu472Y51hrge-aEEsGmA3sE1_i1_rFsxM",
+  authDomain: "memo-7b4a5.firebaseapp.com",
+  projectId: "memo-7b4a5",
+  storageBucket: "memo-7b4a5.firebasestorage.app",
+  messagingSenderId: "381488585885",
+  appId: "1:381488585885:web:cde2b21dc4f36b3c400874",
+  measurementId: "G-HYQWT8FEXF"
+};
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+
+(function(){
+
+  /* ---------------- utilities ---------------- */
+  function $(id){ return document.getElementById(id); }
+  function esc(s){
+    return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+  function nowIso(){ return new Date().toISOString(); }
+  function todayStr(){
+    var d = new Date();
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+  function fmtRelative(iso){
+    if(!iso) return "";
+    var t = new Date(iso).getTime();
+    if(isNaN(t)) return "";
+    var diff = Date.now() - t;
+    var min = Math.floor(diff/60000);
+    if(min < 1) return "たった今";
+    if(min < 60) return min + "分前";
+    var hr = Math.floor(min/60);
+    if(hr < 24) return hr + "時間前";
+    var day = Math.floor(hr/24);
+    if(day < 7) return day + "日前";
+    var d = new Date(t);
+    return (d.getMonth()+1)+"/"+d.getDate();
+  }
+  var WD = ["日","月","火","水","木","金","土"];
+  function fmtDue(dateStr){
+    if(!dateStr) return "";
+    var parts = dateStr.split("-");
+    if(parts.length!==3) return dateStr;
+    var d = new Date(+parts[0], +parts[1]-1, +parts[2]);
+    return (+parts[1])+"/"+(+parts[2])+"("+WD[d.getDay()]+")";
+  }
+  function isOverdue(dateStr, done){
+    if(!dateStr || done) return false;
+    return dateStr < todayStr();
+  }
+  function isDueToday(dateStr, done){
+    if(!dateStr || done) return false;
+    return dateStr === todayStr();
+  }
+  function highlight(text, q){
+    if(!q) return esc(text);
+    var idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if(idx === -1) return esc(text);
+    return esc(text.slice(0,idx)) + "<mark>" + esc(text.slice(idx, idx+q.length)) + "</mark>" + esc(text.slice(idx+q.length));
+  }
+
+  /* ---------------- account state ---------------- */
+  var currentUid = null;
+  var userName = "";
+  var acctMode = "login";
+  var pendingAfterAccount = null;
+
+  /* ---------------- app state ---------------- */
+  var notesMap = new Map();
+  var tasksMap = new Map();
+  var profilesMap = new Map(); // uid -> name
+  var currentTab = "notes";
+  var searchQuery = "";
+  var notesFilter = "all";
+  var noteVisDraft = "public";
+  var tasksFilter = "all";
+  var editingNoteId = null;
+  var editingTaskId = null;
+  var connTimer = null;
+  var unsubs = [];
+
+  function isMineUid(uid){
+    return !!(uid && currentUid && uid === currentUid);
+  }
+  function canSeeNote(n){
+    return n.visibility !== "private" || isMineUid(n.ownerUid);
+  }
+  // A task is visible only if it's assigned to me, or I'm the one who
+  // asked someone else to do it — other people's tasks that don't
+  // involve me at all stay out of sight entirely.
+  function canSeeTask(t){
+    return isMineUid(t.assigneeUid) || isMineUid(t.authorUid);
+  }
+  function lookupUidByName(name){
+    if(!name) return "";
+    var key = name.trim().toLowerCase();
+    var found = "";
+    profilesMap.forEach(function(n, uid){
+      if(n && n.trim().toLowerCase() === key) found = uid;
+    });
+    return found;
+  }
+
+  /* ---------------- rendering ---------------- */
+  function updateUserChip(){
+    $("userName").textContent = userName || "未ログイン";
+    $("userDot").textContent = userName ? userName.trim().charAt(0).toUpperCase() : "?";
+    $("whoamiName").textContent = userName || "未ログイン";
+  }
+
+  function setActiveTab(tab){
+    currentTab = tab;
+    document.body.setAttribute("data-active", tab);
+    document.querySelectorAll(".tab-btn").forEach(function(b){
+      b.classList.toggle("active", b.dataset.tab === tab);
+    });
+    $("viewNotes").hidden = tab !== "notes" || !!searchQuery;
+    $("viewTasks").hidden = tab !== "tasks" || !!searchQuery;
+  }
+
+  function renderAll(){
+    renderNotes();
+    renderTasks();
+    renderSearch();
+    $("cntNotes").textContent = Array.from(notesMap.values()).filter(canSeeNote).length;
+    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(t){return canSeeTask(t) && !t.done;}).length;
+    renderAssigneeList();
+  }
+
+  function getOrder(item){
+    if(typeof item.order === "number") return item.order;
+    var t = Date.parse(item.createdAt || "");
+    return isNaN(t) ? 0 : t;
+  }
+
+  function sortedNotes(){
+    return Array.from(notesMap.entries()).filter(function(e){
+      if(!canSeeNote(e[1])) return false;
+      if(notesFilter === "public") return e[1].visibility !== "private";
+      if(notesFilter === "mine") return e[1].visibility === "private";
+      return true;
+    }).sort(function(a,b){
+      return getOrder(a[1]) - getOrder(b[1]);
+    });
+  }
+  function sortedTasks(){
+    return Array.from(tasksMap.entries()).filter(function(e){
+      var t = e[1];
+      if(!canSeeTask(t)) return false;
+      if(tasksFilter === "mine") return isMineUid(t.assigneeUid);
+      if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isMineUid(t.assigneeUid) && t.assigneeName;
+      return true; // "all" = everything relevant to me: assigned to me, or requested by me
+    });
+  }
+
+  var LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  var GRIP_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.8"/><circle cx="16" cy="6" r="1.8"/><circle cx="8" cy="12" r="1.8"/><circle cx="16" cy="12" r="1.8"/><circle cx="8" cy="18" r="1.8"/><circle cx="16" cy="18" r="1.8"/></svg>';
+
+  function noteCardHtml(id, n){
+    var body = (n.body||"").trim();
+    var lock = n.visibility === "private" ? '<span class="lock-badge">'+LOCK_SVG+'</span>' : "";
+    return '<div class="note-card" data-id="'+id+'">' +
+      '<div class="n-head"><div class="n-title">'+esc(n.title||"(無題)")+'</div>' +
+        '<span class="drag-handle" title="ドラッグで並び替え">'+GRIP_SVG+'</span></div>' +
+      '<div class="n-body">'+esc(body)+'</div>' +
+      '<div class="n-foot"><span class="foot-left">'+lock+'<span>'+esc(n.authorName||"")+'</span></span><span>'+fmtRelative(n.updatedAt)+'</span></div>' +
+      '</div>';
+  }
+
+  var notesSortable = null, tasksSortable = null;
+  var dragActive = false, pendingRenderAll = false;
+
+  function endDrag(){
+    dragActive = false;
+    if(pendingRenderAll){ pendingRenderAll = false; renderAll(); }
+  }
+
+  // After a drag-drop, work out a new order value for the moved item from
+  // its now-adjacent siblings only (fractional indexing) — this keeps
+  // working correctly even when a filter/search is hiding other items,
+  // since we never have to touch anyone else's order value.
+  function reorderAfterDrag(map, collName, itemEl){
+    var id = itemEl.dataset.id;
+    var item = map.get(id);
+    if(!item) return;
+    var prevEl = itemEl.previousElementSibling;
+    var nextEl = itemEl.nextElementSibling;
+    var prevOrder = prevEl ? getOrder(map.get(prevEl.dataset.id) || {}) : null;
+    var nextOrder = nextEl ? getOrder(map.get(nextEl.dataset.id) || {}) : null;
+    var newOrder;
+    if(prevOrder != null && nextOrder != null) newOrder = (prevOrder + nextOrder) / 2;
+    else if(prevOrder != null) newOrder = prevOrder + 1000;
+    else if(nextOrder != null) newOrder = nextOrder - 1000;
+    else newOrder = Date.now();
+    map.set(id, Object.assign({}, item, { order: newOrder }));
+    updateDoc(doc(db, collName, id), { order: newOrder }).catch(function(){});
+  }
+
+  function renderNotes(){
+    var wrap = $("notesGrid");
+    var items = sortedNotes();
+    $("notesEmpty").hidden = items.length !== 0;
+    wrap.innerHTML = items.map(function(e){ return noteCardHtml(e[0], e[1]); }).join("");
+    wrap.querySelectorAll(".note-card").forEach(function(el){
+      el.addEventListener("click", function(){ openNoteEditor(el.dataset.id); });
+    });
+    wrap.querySelectorAll(".drag-handle").forEach(function(el){
+      el.addEventListener("click", function(ev){ ev.stopPropagation(); });
+    });
+    if(notesSortable){ notesSortable.destroy(); notesSortable = null; }
+    if(window.Sortable){
+      notesSortable = new Sortable(wrap, {
+        handle: ".drag-handle",
+        animation: 150,
+        onStart: function(){ dragActive = true; },
+        onEnd: function(evt){ reorderAfterDrag(notesMap, "notes", evt.item); endDrag(); }
+      });
+    }
+  }
+
+  function taskRowHtml(id, t){
+    var due = t.dueDate ? fmtDue(t.dueDate) : "";
+    var overdue = isOverdue(t.dueDate, t.done);
+    var dueToday = isDueToday(t.dueDate, t.done);
+    var dueClass = overdue ? "overdue" : (dueToday ? "today" : "");
+    var meta = "";
+    if(t.authorName && t.assigneeName && t.authorUid !== t.assigneeUid){
+      meta += '<span class="pill from">'+esc(t.authorName)+'より</span>';
+    }
+    if(t.assigneeName) meta += '<span class="pill assignee">'+esc(t.assigneeName)+'</span>';
+    if(due) meta += '<span class="pill due '+dueClass+'">'+(overdue?"期限超過 ":"")+due+'</span>';
+    var mine = isMineUid(t.assigneeUid) ? " assigned-to-me" : "";
+    return '<div class="task-row'+(t.done?' is-done':'')+mine+'" data-id="'+id+'">' +
+      '<button class="task-check'+(t.done?' done':'')+'" data-id="'+id+'" aria-label="完了にする">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>' +
+      '</button>' +
+      '<div class="task-main">' +
+        '<div class="task-title">'+esc(t.title||"(無題)")+'</div>' +
+        (meta ? '<div class="task-meta">'+meta+'</div>' : '') +
+      '</div>' +
+      '<span class="drag-handle" title="ドラッグで並び替え">'+GRIP_SVG+'</span>' +
+    '</div>';
+  }
+
+  function renderTasks(){
+    var all = sortedTasks();
+    var open = all.filter(function(e){ return !e[1].done; });
+    var done = all.filter(function(e){ return e[1].done; });
+
+    open.sort(function(a,b){ return getOrder(a[1]) - getOrder(b[1]); });
+    done.sort(function(a,b){ return (b[1].updatedAt||"").localeCompare(a[1].updatedAt||""); });
+
+    $("tasksEmpty").hidden = (open.length + done.length) !== 0;
+    $("openCount").textContent = open.length ? "（"+open.length+"）" : "";
+    $("openList").innerHTML = open.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
+
+    $("doneSection").hidden = done.length === 0;
+    $("doneCount").textContent = done.length ? "（"+done.length+"）" : "";
+    $("doneList").innerHTML = done.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
+
+    document.querySelectorAll(".task-check").forEach(function(el){
+      el.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        ev.preventDefault();
+        toggleTaskDone(el.dataset.id);
+      });
+    });
+    document.querySelectorAll(".task-row").forEach(function(el){
+      el.addEventListener("click", function(ev){
+        if(ev.target.closest(".task-check") || ev.target.closest(".drag-handle")) return;
+        openTaskEditor(el.dataset.id);
+      });
+    });
+    document.querySelectorAll("#openList .drag-handle, #doneList .drag-handle").forEach(function(el){
+      el.addEventListener("click", function(ev){ ev.stopPropagation(); });
+    });
+
+    if(tasksSortable){ tasksSortable.destroy(); tasksSortable = null; }
+    if(window.Sortable){
+      tasksSortable = new Sortable($("openList"), {
+        handle: ".drag-handle",
+        animation: 150,
+        onStart: function(){ dragActive = true; },
+        onEnd: function(evt){ reorderAfterDrag(tasksMap, "tasks", evt.item); endDrag(); }
+      });
+    }
+  }
+
+  function renderAssigneeList(){
+    var names = new Set();
+    profilesMap.forEach(function(n){ if(n) names.add(n); });
+    if(userName) names.add(userName);
+    $("assigneeList").innerHTML = Array.from(names).sort().map(function(n){
+      return '<option value="'+esc(n)+'">';
+    }).join("");
+  }
+
+  function matches(hay, q){
+    return hay && hay.toLowerCase().indexOf(q) !== -1;
+  }
+
+  function renderSearch(){
+    var q = searchQuery.trim().toLowerCase();
+    $("viewSearch").hidden = !q;
+    $("tabs").hidden = !!q;
+    $("searchHeading").hidden = !q;
+    if(!q){
+      setActiveTab(currentTab);
+      return;
+    }
+    $("viewNotes").hidden = true;
+    $("viewTasks").hidden = true;
+
+    var results = [];
+    notesMap.forEach(function(n, id){
+      if(!canSeeNote(n)) return;
+      if(matches(n.title, q) || matches(n.body, q) || matches(n.authorName, q)){
+        results.push({type:"note", id:id, data:n, sortKey:n.updatedAt||""});
+      }
+    });
+    tasksMap.forEach(function(t, id){
+      if(!canSeeTask(t)) return;
+      if(matches(t.title, q) || matches(t.detail, q) || matches(t.assigneeName, q)){
+        results.push({type:"task", id:id, data:t, sortKey:t.updatedAt||""});
+      }
+    });
+    results.sort(function(a,b){ return b.sortKey.localeCompare(a.sortKey); });
+
+    $("searchHeading").textContent = results.length + "件の検索結果";
+
+    var html = results.map(function(r){
+      if(r.type === "note"){
+        var snippet = (r.data.body||"").slice(0,90);
+        var lockPill = r.data.visibility === "private" ? '<span class="pill">自分だけ</span>' : "";
+        return '<div class="result-row" data-type="note" data-id="'+r.id+'">' +
+          '<div class="result-top"><span class="pill type-note">メモ</span>'+lockPill+'<span class="result-title">'+highlight(r.data.title||"(無題)", searchQuery)+'</span></div>' +
+          '<div class="result-snippet">'+highlight(snippet, searchQuery)+'</div>' +
+          '</div>';
+      } else {
+        var due = r.data.dueDate ? fmtDue(r.data.dueDate) : "";
+        var bits = [];
+        if(r.data.assigneeName) bits.push(esc(r.data.assigneeName));
+        if(due) bits.push(due);
+        if(r.data.done) bits.push("完了");
+        return '<div class="result-row" data-type="task" data-id="'+r.id+'">' +
+          '<div class="result-top"><span class="pill type-task">タスク</span><span class="result-title">'+highlight(r.data.title||"(無題)", searchQuery)+'</span></div>' +
+          '<div class="result-snippet">'+esc(bits.join(" ・ "))+'</div>' +
+          '</div>';
+      }
+    }).join("");
+
+    $("viewSearch").innerHTML = html || '<div class="empty"><div class="e-title">見つかりませんでした</div><div class="e-sub">別のキーワードで検索してみてください。</div></div>';
+    $("viewSearch").querySelectorAll(".result-row").forEach(function(el){
+      el.addEventListener("click", function(){
+        if(el.dataset.type === "note") openNoteEditor(el.dataset.id);
+        else openTaskEditor(el.dataset.id);
+      });
+    });
+  }
+
+  /* ---------------- editors ---------------- */
+  function setNoteVis(v){
+    noteVisDraft = v;
+    document.querySelectorAll("#noteVisToggle .vis-btn").forEach(function(b){
+      b.classList.toggle("active", b.dataset.vis === v);
+    });
+  }
+
+  function openNoteEditor(id){
+    editingNoteId = id || null;
+    var n = id ? notesMap.get(id) : null;
+    $("noteSheetTitle").textContent = id ? "メモを編集" : "新しいメモ";
+    $("noteTitleInput").value = n ? n.title || "" : "";
+    $("noteBodyInput").value = n ? n.body || "" : "";
+    setNoteVis(n && n.visibility === "private" ? "private" : "public");
+    $("noteDeleteBtn").hidden = !id;
+    $("noteMetaText").textContent = n ? (n.authorName||"") + " が作成 ・ 更新: " + fmtRelative(n.updatedAt) : "";
+    $("noteOverlay").classList.add("show");
+    setTimeout(function(){ $("noteTitleInput").focus(); }, 50);
+  }
+  function closeNoteEditor(){ $("noteOverlay").classList.remove("show"); editingNoteId = null; }
+
+  function openTaskEditor(id){
+    editingTaskId = id || null;
+    var t = id ? tasksMap.get(id) : null;
+    $("taskSheetTitle").textContent = id ? "タスクを編集" : "新しいタスク";
+    $("taskTitleInput").value = t ? t.title || "" : "";
+    $("taskAssigneeInput").value = t ? t.assigneeName || "" : "";
+    $("taskDueInput").value = t ? t.dueDate || "" : "";
+    $("taskDetailInput").value = t ? t.detail || "" : "";
+    $("taskDoneInput").checked = t ? !!t.done : false;
+    $("taskDeleteBtn").hidden = !id;
+    $("taskMetaText").textContent = t ? (t.authorName||"") + " が作成 ・ 更新: " + fmtRelative(t.updatedAt) : "";
+    $("taskOverlay").classList.add("show");
+    setTimeout(function(){ $("taskTitleInput").focus(); }, 50);
+  }
+  function closeTaskEditor(){ $("taskOverlay").classList.remove("show"); editingTaskId = null; }
+
+  /* ---------------- writes ---------------- */
+  function ensureAccount(cb){
+    if(currentUid){ cb(); return; }
+    openAccountOverlay();
+    pendingAfterAccount = cb;
+  }
+
+  function saveNote(){
+    var title = $("noteTitleInput").value.trim();
+    var body = $("noteBodyInput").value.trim();
+    if(!title && !body) { closeNoteEditor(); return; }
+    ensureAccount(function(){
+      var ts = nowIso();
+      if(editingNoteId){
+        updateDoc(doc(db,"notes",editingNoteId), {
+          title: title, body: body, visibility: noteVisDraft,
+          ownerUid: currentUid, ownerName: userName, updatedAt: ts
+        }).catch(function(){});
+      } else {
+        addDoc(collection(db,"notes"), {
+          title: title, body: body, visibility: noteVisDraft,
+          authorUid: currentUid, authorName: userName,
+          ownerUid: currentUid, ownerName: userName,
+          order: Date.now(), createdAt: ts, updatedAt: ts
+        }).catch(function(){});
+      }
+      closeNoteEditor();
+    });
+  }
+  function deleteNote(){
+    if(editingNoteId){ deleteDoc(doc(db,"notes",editingNoteId)).catch(function(){}); }
+    closeNoteEditor();
+  }
+
+  function saveTask(){
+    var title = $("taskTitleInput").value.trim();
+    if(!title){ closeTaskEditor(); return; }
+    ensureAccount(function(){
+      var ts = nowIso();
+      var assigneeName = $("taskAssigneeInput").value.trim();
+      var fields = {
+        title: title,
+        assigneeName: assigneeName,
+        assigneeUid: lookupUidByName(assigneeName),
+        dueDate: $("taskDueInput").value || "",
+        detail: $("taskDetailInput").value.trim(),
+        done: $("taskDoneInput").checked,
+        updatedAt: ts
+      };
+      if(editingTaskId){
+        updateDoc(doc(db,"tasks",editingTaskId), fields).catch(function(){});
+      } else {
+        fields.authorUid = currentUid;
+        fields.authorName = userName;
+        fields.createdAt = ts;
+        fields.order = Date.now();
+        addDoc(collection(db,"tasks"), fields).catch(function(){});
+      }
+      closeTaskEditor();
+    });
+  }
+  function deleteTask(){
+    if(editingTaskId){ deleteDoc(doc(db,"tasks",editingTaskId)).catch(function(){}); }
+    closeTaskEditor();
+  }
+  function toggleTaskDone(id){
+    var t = tasksMap.get(id);
+    if(!t) return;
+    var prev = t;
+    var newDone = !t.done;
+    var ts = nowIso();
+    // optimistic update: reflect the tap instantly, don't wait on the network
+    tasksMap.set(id, Object.assign({}, t, { done: newDone, updatedAt: ts }));
+    renderTasks();
+    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return canSeeTask(x) && !x.done;}).length;
+    updateDoc(doc(db,"tasks",id), { done: newDone, updatedAt: ts }).catch(function(){
+      tasksMap.set(id, prev);
+      renderTasks();
+    });
+  }
+
+  /* ---------------- events ---------------- */
+  document.querySelectorAll(".tab-btn").forEach(function(b){
+    b.addEventListener("click", function(){ setActiveTab(b.dataset.tab); });
+  });
+
+  $("searchInput").addEventListener("input", function(){
+    searchQuery = this.value;
+    $("searchWrap").classList.toggle("has-value", !!searchQuery);
+    renderSearch();
+  });
+  $("searchClear").addEventListener("click", function(){
+    $("searchInput").value = "";
+    searchQuery = "";
+    $("searchWrap").classList.remove("has-value");
+    renderSearch();
+  });
+
+  $("fabAdd").addEventListener("click", function(){
+    if(currentTab === "tasks") openTaskEditor(null);
+    else openNoteEditor(null);
+  });
+
+  document.querySelectorAll("#notesFilterChips .chip").forEach(function(b){
+    b.addEventListener("click", function(){
+      notesFilter = b.dataset.filter;
+      document.querySelectorAll("#notesFilterChips .chip").forEach(function(c){
+        c.classList.toggle("active", c === b);
+      });
+      renderNotes();
+    });
+  });
+  document.querySelectorAll("#tasksFilterChips .chip").forEach(function(b){
+    b.addEventListener("click", function(){
+      tasksFilter = b.dataset.filter;
+      document.querySelectorAll("#tasksFilterChips .chip").forEach(function(c){
+        c.classList.toggle("active", c === b);
+      });
+      renderTasks();
+    });
+  });
+  document.querySelectorAll("#noteVisToggle .vis-btn").forEach(function(b){
+    b.addEventListener("click", function(){ setNoteVis(b.dataset.vis); });
+  });
+
+  $("noteSaveBtn").addEventListener("click", saveNote);
+  $("noteCancelBtn").addEventListener("click", closeNoteEditor);
+  $("noteDeleteBtn").addEventListener("click", deleteNote);
+  $("noteOverlay").addEventListener("click", function(e){ if(e.target === this) closeNoteEditor(); });
+
+  $("taskSaveBtn").addEventListener("click", saveTask);
+  $("taskCancelBtn").addEventListener("click", closeTaskEditor);
+  $("taskDeleteBtn").addEventListener("click", deleteTask);
+  $("taskOverlay").addEventListener("click", function(e){ if(e.target === this) closeTaskEditor(); });
+
+  $("openTitle").addEventListener("click", function(){
+    this.classList.toggle("collapsed");
+    $("openList").classList.toggle("collapsed");
+  });
+  $("doneTitle").addEventListener("click", function(){
+    this.classList.toggle("collapsed");
+    $("doneList").classList.toggle("collapsed");
+  });
+
+  /* ---------------- account UI ---------------- */
+  function showAcctError(msg, ok){
+    $("acctError").textContent = msg;
+    $("acctError").style.color = ok ? "var(--success)" : "var(--warn)";
+    $("acctError").hidden = false;
+  }
+  function setAcctMode(mode){
+    acctMode = mode;
+    document.querySelectorAll("#acctModeToggle .vis-btn").forEach(function(b){
+      b.classList.toggle("active", b.dataset.mode === mode);
+    });
+    $("acctNameField").hidden = mode !== "signup";
+    $("acctSubmitBtn").textContent = mode === "signup" ? "登録する" : "ログイン";
+    $("acctSubmitBtn").disabled = false;
+    $("acctError").hidden = true;
+  }
+  function openAccountOverlay(){
+    $("acctError").hidden = true;
+    if(currentUid){
+      $("acctCurrentName").textContent = userName;
+      $("acctCurrentEmail").textContent = (auth.currentUser && auth.currentUser.email) || "";
+      $("acctLoggedInView").hidden = false;
+      $("acctLoggedOutView").hidden = true;
+    } else {
+      $("acctNameInput").value = "";
+      $("acctEmailInput").value = "";
+      $("acctPwInput").value = "";
+      setAcctMode(acctMode);
+      $("acctLoggedInView").hidden = true;
+      $("acctLoggedOutView").hidden = false;
+    }
+    $("nameOverlay").classList.add("show");
+    setTimeout(function(){ if(!currentUid) $("acctEmailInput").focus(); }, 50);
+  }
+  function closeAccountOverlay(){ $("nameOverlay").classList.remove("show"); }
+
+  $("userChip").addEventListener("click", function(){ pendingAfterAccount = null; openAccountOverlay(); });
+  $("whoamiHint").addEventListener("click", function(){ pendingAfterAccount = null; openAccountOverlay(); });
+  $("acctCloseBtn").addEventListener("click", closeAccountOverlay);
+  document.querySelectorAll("#acctModeToggle .vis-btn").forEach(function(b){
+    b.addEventListener("click", function(){ setAcctMode(b.dataset.mode); });
+  });
+
+  $("acctLogoutBtn").addEventListener("click", function(){
+    signOut(auth).catch(function(){});
+  });
+
+  function authErrorMessage(err){
+    var code = (err && err.code) || "";
+    var map = {
+      "auth/invalid-email": "メールアドレスの形式が正しくありません。",
+      "auth/user-not-found": "そのメールアドレスのアカウントが見つかりません。「新規登録」タブから登録してください。",
+      "auth/wrong-password": "パスワードが違います。",
+      "auth/invalid-credential": "メールアドレスかパスワードが間違っています。",
+      "auth/email-already-in-use": "そのメールアドレスは既に登録されています。「ログイン」タブからログインしてください。",
+      "auth/weak-password": "パスワードは6文字以上にしてください。",
+      "auth/too-many-requests": "試行回数が多すぎます。しばらく待ってからお試しください。",
+      "auth/network-request-failed": "通信エラーが発生しました。通信状況を確認してもう一度お試しください。"
+    };
+    return map[code] || ("エラーが発生しました。もう一度お試しください。(" + (code || "unknown") + ")");
+  }
+
+  function handleAccountSubmit(){
+    var email = $("acctEmailInput").value.trim();
+    var pw = $("acctPwInput").value;
+    $("acctError").hidden = true;
+    if(!email || !pw){ showAcctError("メールアドレスとパスワードを入力してください。"); return; }
+    if(acctMode === "signup"){
+      var name = $("acctNameInput").value.trim();
+      if(!name){ showAcctError("表示名を入力してください。"); return; }
+      if(pw.length < 6){ showAcctError("パスワードは6文字以上にしてください。"); return; }
+      $("acctSubmitBtn").disabled = true; $("acctSubmitBtn").textContent = "登録中...";
+      createUserWithEmailAndPassword(auth, email, pw).then(function(cred){
+        return updateProfile(cred.user, { displayName: name }).then(function(){
+          return setDoc(doc(db,"profiles",cred.user.uid), { name: name, email: email, createdAt: nowIso() });
+        });
+      }).catch(function(err){
+        showAcctError(authErrorMessage(err));
+        $("acctSubmitBtn").disabled = false; $("acctSubmitBtn").textContent = "登録する";
+      });
+    } else {
+      $("acctSubmitBtn").disabled = true; $("acctSubmitBtn").textContent = "確認中...";
+      signInWithEmailAndPassword(auth, email, pw).catch(function(err){
+        showAcctError(authErrorMessage(err));
+        $("acctSubmitBtn").disabled = false; $("acctSubmitBtn").textContent = "ログイン";
+      });
+    }
+  }
+  $("acctSubmitBtn").addEventListener("click", handleAccountSubmit);
+  $("acctPwInput").addEventListener("keydown", function(e){ if(e.key === "Enter") handleAccountSubmit(); });
+
+  $("acctForgot").addEventListener("click", function(){
+    var email = $("acctEmailInput").value.trim();
+    if(!email){ showAcctError("パスワード再設定には、まずメールアドレス欄の入力が必要です。"); return; }
+    sendPasswordResetEmail(auth, email).then(function(){
+      showAcctError("パスワード再設定用のメールを送信しました。メールをご確認ください。", true);
+    }).catch(function(err){
+      showAcctError(authErrorMessage(err));
+    });
+  });
+
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape"){
+      closeNoteEditor(); closeTaskEditor();
+      closeAccountOverlay();
+    }
+  });
+
+  /* ---------------- db wiring ---------------- */
+  function markReady(){
+    if(connTimer){ clearTimeout(connTimer); connTimer = null; }
+    $("connBanner").classList.remove("show");
+  }
+
+  function safeRenderAll(){
+    // Don't blow away the list mid-drag (a live reorder or a co-worker's
+    // edit arriving via onSnapshot) — render right after the drag ends.
+    if(dragActive){ pendingRenderAll = true; return; }
+    renderAll();
+  }
+
+  function clearSubs(){
+    unsubs.forEach(function(u){ try{ u(); }catch(e){} });
+    unsubs = [];
+  }
+
+  function subscribeAll(uid){
+    clearSubs();
+    var notesPublicRaw = new Map(), notesMineRaw = new Map();
+    var tasksAssigneeRaw = new Map(), tasksAuthorRaw = new Map();
+
+    function mergeNotes(){
+      notesMap.clear();
+      notesPublicRaw.forEach(function(v,k){ notesMap.set(k,v); });
+      notesMineRaw.forEach(function(v,k){ notesMap.set(k,v); });
+      markReady();
+      safeRenderAll();
+    }
+    function mergeTasks(){
+      tasksMap.clear();
+      tasksAssigneeRaw.forEach(function(v,k){ tasksMap.set(k,v); });
+      tasksAuthorRaw.forEach(function(v,k){ tasksMap.set(k,v); });
+      markReady();
+      safeRenderAll();
+    }
+
+    unsubs.push(onSnapshot(query(collection(db,"notes"), where("visibility","==","public")), function(qs){
+      notesPublicRaw.clear();
+      qs.forEach(function(d){ notesPublicRaw.set(d.id, d.data()); });
+      mergeNotes();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(query(collection(db,"notes"), where("ownerUid","==",uid)), function(qs){
+      notesMineRaw.clear();
+      qs.forEach(function(d){ notesMineRaw.set(d.id, d.data()); });
+      mergeNotes();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUid","==",uid)), function(qs){
+      tasksAssigneeRaw.clear();
+      qs.forEach(function(d){ tasksAssigneeRaw.set(d.id, d.data()); });
+      mergeTasks();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("authorUid","==",uid)), function(qs){
+      tasksAuthorRaw.clear();
+      qs.forEach(function(d){ tasksAuthorRaw.set(d.id, d.data()); });
+      mergeTasks();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(collection(db,"profiles"), function(qs){
+      profilesMap.clear();
+      qs.forEach(function(d){ profilesMap.set(d.id, (d.data()||{}).name || ""); });
+      renderAssigneeList();
+    }, function(){}));
+  }
+
+  function maybeSeed(uid, name){
+    var metaRef = doc(db,"meta","app");
+    runTransaction(db, function(tx){
+      return tx.get(metaRef).then(function(snap){
+        if(snap.exists() && snap.data() && snap.data().seeded) return;
+        var ts = nowIso();
+        var noteRef = doc(collection(db,"notes"));
+        var taskRef = doc(collection(db,"tasks"));
+        tx.set(noteRef, {
+          title: "ようこそ「だんどり」へ",
+          body: "ここはチームでメモとタスクを共有するボードです。\n\n・「メモ」タブで自由に記録を残せます\n・メモは「みんなに共有」か「自分だけ」かを選べます\n・「タスク」タブで担当者と期限を決めて依頼できます\n・上の検索でメモ・タスクを横断して探せます\n\nこのメモは自由に編集・削除して大丈夫です。",
+          authorUid: uid, authorName: name, ownerUid: uid, ownerName: name,
+          visibility: "public", order: Date.now(), createdAt: ts, updatedAt: ts
+        });
+        tx.set(taskRef, {
+          title: "このタスクをタップして完了にしてみる",
+          detail: "チェックをつけると「完了」に移動します。",
+          assigneeUid: "", assigneeName: "", dueDate: "", done: false,
+          authorUid: uid, authorName: name, order: Date.now(), createdAt: ts, updatedAt: ts
+        });
+        tx.set(metaRef, { seeded: true, seededAt: ts });
+      });
+    }).catch(function(){});
+  }
+
+  function handleAuthChange(user){
+    clearSubs();
+    markReady();
+    if(!user){
+      currentUid = null; userName = "";
+      notesMap.clear(); tasksMap.clear(); profilesMap.clear();
+      updateUserChip();
+      renderAll();
+      setTimeout(function(){ openAccountOverlay(); }, 300);
+      return;
+    }
+    currentUid = user.uid;
+    getDoc(doc(db,"profiles",user.uid)).then(function(snap){
+      var data = snap.exists() ? snap.data() : null;
+      userName = (data && data.name) || user.displayName || (user.email ? user.email.split("@")[0] : "");
+      updateUserChip();
+      renderAll();
+      closeAccountOverlay();
+      subscribeAll(currentUid);
+      maybeSeed(currentUid, userName);
+      if(pendingAfterAccount){ var fn = pendingAfterAccount; pendingAfterAccount = null; fn(); }
+    });
+  }
+
+  function init(){
+    updateUserChip();
+    setActiveTab("notes");
+    renderAll();
+    connTimer = setTimeout(function(){ $("connBanner").classList.add("show"); }, 6000);
+    onAuthStateChanged(auth, handleAuthChange);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
