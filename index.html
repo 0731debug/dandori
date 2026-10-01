@@ -772,6 +772,10 @@
         <label for="acctNameInput">表示名</label>
         <input id="acctNameInput" type="text" maxlength="20" placeholder="例）佐藤" autocomplete="name">
       </div>
+      <div class="field" id="acctInviteField">
+        <label for="acctInviteInput">招待コード</label>
+        <input id="acctInviteInput" type="text" maxlength="40" placeholder="チームから共有されたコード" autocomplete="off">
+      </div>
       <div class="field">
         <label for="acctEmailInput">メールアドレス</label>
         <input id="acctEmailInput" type="email" placeholder="you@example.com" autocomplete="username">
@@ -825,6 +829,13 @@ const firebaseConfig = {
   appId: "1:381488585885:web:cde2b21dc4f36b3c400874",
   measurementId: "G-HYQWT8FEXF"
 };
+// A simple shared "invite code" required to register a new account. This
+// is only a friction/deterrent against a stranger who stumbles on the
+// public URL — it lives in this page's own source, so it is not a real
+// secret and not a substitute for the Firestore security rules, which are
+// what actually control who can read/write data.
+const INVITE_CODE = "IThojo123";
+
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
@@ -1374,6 +1385,7 @@ const db = getFirestore(fbApp);
       b.classList.toggle("active", b.dataset.mode === mode);
     });
     $("acctNameField").hidden = mode !== "signup";
+    $("acctInviteField").hidden = mode !== "signup";
     $("acctSubmitBtn").textContent = mode === "signup" ? "登録する" : "ログイン";
     $("acctSubmitBtn").disabled = false;
     $("acctError").hidden = true;
@@ -1387,6 +1399,7 @@ const db = getFirestore(fbApp);
       $("acctLoggedOutView").hidden = true;
     } else {
       $("acctNameInput").value = "";
+      $("acctInviteInput").value = "";
       $("acctEmailInput").value = "";
       $("acctPwInput").value = "";
       setAcctMode(acctMode);
@@ -1431,7 +1444,9 @@ const db = getFirestore(fbApp);
     if(!email || !pw){ showAcctError("メールアドレスとパスワードを入力してください。"); return; }
     if(acctMode === "signup"){
       var name = $("acctNameInput").value.trim();
+      var invite = $("acctInviteInput").value.trim();
       if(!name){ showAcctError("表示名を入力してください。"); return; }
+      if(invite !== INVITE_CODE){ showAcctError("招待コードが正しくありません。チームの管理者に確認してください。"); return; }
       if(pw.length < 6){ showAcctError("パスワードは6文字以上にしてください。"); return; }
       $("acctSubmitBtn").disabled = true; $("acctSubmitBtn").textContent = "登録中...";
       createUserWithEmailAndPassword(auth, email, pw).then(function(cred){
