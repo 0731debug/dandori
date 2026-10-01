@@ -950,9 +950,12 @@ const db = getFirestore(fbApp);
     return Array.from(tasksMap.entries()).filter(function(e){
       var t = e[1];
       if(!canSeeTask(t)) return false;
-      if(tasksFilter === "mine") return isMineUid(t.assigneeUid);
-      if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isMineUid(t.assigneeUid) && t.assigneeName;
-      return true; // "all" = everything relevant to me: assigned to me, or requested by me
+      // A task with no assignee at all is effectively a personal task for
+      // whoever created it, so it counts as "mine" for its author too.
+      var unassigned = !t.assigneeUid;
+      if(tasksFilter === "mine") return isMineUid(t.assigneeUid) || (unassigned && isMineUid(t.authorUid));
+      if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isMineUid(t.assigneeUid) && !!t.assigneeName;
+      return true;
     });
   }
 
@@ -1225,10 +1228,19 @@ const db = getFirestore(fbApp);
     ensureAccount(function(){
       var ts = nowIso();
       var assigneeName = $("taskAssigneeInput").value.trim();
+      var assigneeUid;
+      if(assigneeName){
+        assigneeUid = lookupUidByName(assigneeName);
+      } else {
+        // Left blank: treat it as your own personal task rather than an
+        // unassigned one nobody would ever see.
+        assigneeName = userName;
+        assigneeUid = currentUid;
+      }
       var fields = {
         title: title,
         assigneeName: assigneeName,
-        assigneeUid: lookupUidByName(assigneeName),
+        assigneeUid: assigneeUid,
         detail: $("taskDetailInput").value.trim(),
         done: $("taskDoneInput").checked,
         updatedAt: ts
