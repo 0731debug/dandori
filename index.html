@@ -443,6 +443,11 @@
   .task-meta{
     display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;
   }
+  .task-times{
+    font-size:10.5px;
+    color:var(--ink-faint);
+    margin-top:4px;
+  }
   .pill{
     font-size:11px;
     padding:2px 8px;
@@ -1037,6 +1042,8 @@ const db = getFirestore(fbApp);
     }
     if(t.assigneeName) meta += '<span class="pill assignee">'+esc(t.assigneeName)+'</span>';
     var mine = isMineUid(t.assigneeUid) ? " assigned-to-me" : "";
+    var times = "依頼: " + (fmtRelative(t.createdAt) || "-");
+    if(t.done && t.completedAt){ times += " ・完了: " + fmtRelative(t.completedAt); }
     return '<div class="task-row'+(t.done?' is-done':'')+mine+'" data-id="'+id+'">' +
       '<button class="task-check'+(t.done?' done':'')+'" data-id="'+id+'" aria-label="完了にする">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>' +
@@ -1044,6 +1051,7 @@ const db = getFirestore(fbApp);
       '<div class="task-main">' +
         '<div class="task-title">'+esc(t.title||"(無題)")+'</div>' +
         (meta ? '<div class="task-meta">'+meta+'</div>' : '') +
+        '<div class="task-times">'+esc(times)+'</div>' +
       '</div>' +
       '<span class="drag-handle" title="ドラッグで並び替え">'+GRIP_SVG+'</span>' +
     '</div>';
@@ -1243,21 +1251,31 @@ const db = getFirestore(fbApp);
         assigneeName = userName;
         assigneeUid = currentUid;
       }
+      var nowDone = $("taskDoneInput").checked;
       var fields = {
         title: title,
         assigneeName: assigneeName,
         assigneeUid: assigneeUid,
         detail: $("taskDetailInput").value.trim(),
-        done: $("taskDoneInput").checked,
+        done: nowDone,
         updatedAt: ts
       };
       if(editingTaskId){
+        var prevTask = tasksMap.get(editingTaskId);
+        if(nowDone && !(prevTask && prevTask.done)){
+          // Just got checked off in the sheet: stamp the completion time.
+          fields.completedAt = ts;
+        } else if(!nowDone){
+          // Reopened: clear any previous completion time.
+          fields.completedAt = "";
+        }
         updateDoc(doc(db,"tasks",editingTaskId), fields).catch(function(){});
       } else {
         fields.authorUid = currentUid;
         fields.authorName = userName;
         fields.createdAt = ts;
         fields.order = Date.now();
+        fields.completedAt = nowDone ? ts : "";
         addDoc(collection(db,"tasks"), fields).catch(function(){});
       }
       closeTaskEditor();
@@ -1273,11 +1291,12 @@ const db = getFirestore(fbApp);
     var prev = t;
     var newDone = !t.done;
     var ts = nowIso();
+    var completedAt = newDone ? ts : "";
     // optimistic update: reflect the tap instantly, don't wait on the network
-    tasksMap.set(id, Object.assign({}, t, { done: newDone, updatedAt: ts }));
+    tasksMap.set(id, Object.assign({}, t, { done: newDone, updatedAt: ts, completedAt: completedAt }));
     renderTasks();
     $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return canSeeTask(x) && !x.done;}).length;
-    updateDoc(doc(db,"tasks",id), { done: newDone, updatedAt: ts }).catch(function(){
+    updateDoc(doc(db,"tasks",id), { done: newDone, updatedAt: ts, completedAt: completedAt }).catch(function(){
       tasksMap.set(id, prev);
       renderTasks();
     });
@@ -1541,7 +1560,7 @@ const db = getFirestore(fbApp);
         tx.set(taskRef, {
           title: "このタスクをタップして完了にしてみる",
           detail: "チェックをつけると「完了」に移動します。",
-          assigneeUid: "", assigneeName: "", done: false,
+          assigneeUid: "", assigneeName: "", done: false, completedAt: "",
           authorUid: uid, authorName: name, order: Date.now(), createdAt: ts, updatedAt: ts
         });
         tx.set(metaRef, { seeded: true, seededAt: ts });
