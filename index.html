@@ -396,6 +396,14 @@
     gap:6px;
   }
   .task-list.collapsed{display:none;}
+  .task-group-header{
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink-faint);
+    margin:10px 2px 2px;
+  }
+  .task-group-header:first-child{margin-top:0;}
+  .task-list.grouped .drag-handle{visibility:hidden;}
   .task-row{
     background:var(--surface);
     border:1px solid var(--border);
@@ -684,6 +692,7 @@
       <div class="filter-chips" id="tasksFilterChips">
         <button class="chip active" data-filter="mine">自分のタスク</button>
         <button class="chip" data-filter="requested">依頼した分</button>
+        <button class="chip" data-filter="all">全員分</button>
       </div>
       <div class="task-section">
         <div class="section-title" id="openTitle"><span class="chev">▾</span><span>未完了</span><span id="openCount"></span></div>
@@ -796,6 +805,14 @@
     <div id="acctLoggedInView" hidden>
       <h3>アカウント</h3>
       <div class="helptext">現在「<span id="acctCurrentName"></span>」としてログインしています(<span id="acctCurrentEmail"></span>)。</div>
+      <div class="field">
+        <label for="acctNameEditInput">表示名を変更</label>
+        <input id="acctNameEditInput" type="text" maxlength="20" placeholder="例）佐藤">
+      </div>
+      <div class="helptext" id="acctNameEditMsg" hidden></div>
+      <div class="sheet-actions">
+        <button class="btn primary" id="acctNameSaveBtn" style="flex:1;">表示名を保存</button>
+      </div>
       <div class="sheet-actions">
         <button class="btn ghost" id="acctCloseBtn" style="flex:1;">閉じる</button>
         <button class="btn danger" id="acctLogoutBtn">ログアウト</button>
@@ -867,6 +884,16 @@ const db = getFirestore(fbApp);
     var d = new Date(t);
     return (d.getMonth()+1)+"/"+d.getDate();
   }
+  // Absolute "M/D H:MM" timestamp, for showing exactly when a task was
+  // requested or completed (as opposed to fmtRelative's "3時間前" style).
+  function fmtDateTime(iso){
+    if(!iso) return "";
+    var d = new Date(iso);
+    if(isNaN(d.getTime())) return "";
+    var hh = String(d.getHours()).padStart(2,"0");
+    var mi = String(d.getMinutes()).padStart(2,"0");
+    return (d.getMonth()+1) + "/" + d.getDate() + " " + hh + ":" + mi;
+  }
   function highlight(text, q){
     if(!q) return esc(text);
     var idx = text.toLowerCase().indexOf(q.toLowerCase());
@@ -901,11 +928,26 @@ const db = getFirestore(fbApp);
   function canSeeNote(n){
     return n.visibility !== "private" || isMineUid(n.ownerUid);
   }
-  // A task is visible only if it's assigned to me, or I'm the one who
-  // asked someone else to do it — other people's tasks that don't
-  // involve me at all stay out of sight entirely.
+  // Tasks are visible to the whole signed-in team (so the "全員分" tab can
+  // show everyone's tasks) — editing/deleting a task still requires being
+  // its assignee or author, enforced server-side by the Firestore rules.
   function canSeeTask(t){
+    return !!currentUid;
+  }
+  // Whether a task involves ME specifically (I'm an assignee on it, or I'm
+  // the one who requested it) — used for the unread-count badge, which
+  // should stay about *my* work even though the task list itself now also
+  // shows everyone else's tasks.
+  function isTaskRelevantToMe(t){
     return taskIsAssignee(t, currentUid) || isMineUid(t.authorUid);
+  }
+  // Whether the CURRENT user may actually edit/complete/delete this task.
+  // Everyone can now see every task ("全員分"), but only an assignee or
+  // the author can change one — enforced for real by the Firestore rules;
+  // this just drives the editor UI so a view-only visitor isn't invited to
+  // tap a save button that will silently fail.
+  function canEditTask(t){
+    return !t || isTaskRelevantToMe(t);
   }
   // Normalizes a task's assignee(s) into an array of {uid, name}, whether
   // it uses the newer multi-assignee shape (assigneeUids/assigneeNames) or
@@ -978,7 +1020,7 @@ const db = getFirestore(fbApp);
     renderTasks();
     renderSearch();
     $("cntNotes").textContent = Array.from(notesMap.values()).filter(canSeeNote).length;
-    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(t){return canSeeTask(t) && !t.done;}).length;
+    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(t){return isTaskRelevantToMe(t) && !t.done;}).length;
     renderAssigneeList();
   }
 
@@ -1009,8 +1051,21 @@ const db = getFirestore(fbApp);
       var unassigned = assignees.length === 0;
       if(tasksFilter === "mine") return isAssignee || (unassigned && isMineUid(t.authorUid));
       if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isAssignee && assignees.length > 0;
+      // "all": every task the whole team has, regardless of who's on it.
       return true;
     });
+  }
+
+  // Display label used to group/sort the "全員分" (everyone's) task list by
+  // assignee, so tasks naturally cluster by who's doing them.
+  function assigneeGroupLabel(t){
+    var names = taskAssignees(t).map(function(a){ return a.name; }).filter(Boolean);
+    return names.length ? names.slice().sort().join("・") : "担当者未設定";
+  }
+  function compareByAssigneeGroup(a, b){
+    var c = assigneeGroupLabel(a[1]).localeCompare(assigneeGroupLabel(b[1]), "ja");
+    if(c !== 0) return c;
+    return getOrder(a[1]) - getOrder(b[1]);
   }
 
   var LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
@@ -1091,8 +1146,8 @@ const db = getFirestore(fbApp);
       meta += '<span class="pill assignee'+(done?' done':'')+'">'+esc(a.name||"(不明)")+(done?' ✓':'')+'</span>';
     });
     var mine = assignees.some(function(a){ return isMineUid(a.uid); }) ? " assigned-to-me" : "";
-    var times = "依頼: " + (fmtRelative(t.createdAt) || "-");
-    if(t.done && t.completedAt){ times += " ・完了: " + fmtRelative(t.completedAt); }
+    var times = "依頼: " + (fmtDateTime(t.createdAt) || "-");
+    if(t.done && t.completedAt){ times += " ・完了: " + fmtDateTime(t.completedAt); }
     return '<div class="task-row'+(t.done?' is-done':'')+mine+'" data-id="'+id+'">' +
       '<button class="task-check'+(t.done?' done':'')+'" data-id="'+id+'" aria-label="完了にする">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>' +
@@ -1106,21 +1161,46 @@ const db = getFirestore(fbApp);
     '</div>';
   }
 
+  // Renders a task list, inserting a small assignee-name header whenever
+  // the group changes — only used for "全員分", where tasks are sorted by
+  // assignee instead of personal drag order.
+  function groupedTaskListHtml(list){
+    var html = "";
+    var lastGroup = null;
+    list.forEach(function(e){
+      var g = assigneeGroupLabel(e[1]);
+      if(g !== lastGroup){
+        html += '<div class="task-group-header">'+esc(g)+'</div>';
+        lastGroup = g;
+      }
+      html += taskRowHtml(e[0], e[1]);
+    });
+    return html;
+  }
+
   function renderTasks(){
     var all = sortedTasks();
     var open = all.filter(function(e){ return !e[1].done; });
     var done = all.filter(function(e){ return e[1].done; });
+    var isAll = tasksFilter === "all";
 
-    open.sort(function(a,b){ return getOrder(a[1]) - getOrder(b[1]); });
-    done.sort(function(a,b){ return (b[1].updatedAt||"").localeCompare(a[1].updatedAt||""); });
+    if(isAll){
+      open.sort(compareByAssigneeGroup);
+      done.sort(compareByAssigneeGroup);
+    } else {
+      open.sort(function(a,b){ return getOrder(a[1]) - getOrder(b[1]); });
+      done.sort(function(a,b){ return (b[1].updatedAt||"").localeCompare(a[1].updatedAt||""); });
+    }
 
     $("tasksEmpty").hidden = (open.length + done.length) !== 0;
     $("openCount").textContent = open.length ? "（"+open.length+"）" : "";
-    $("openList").innerHTML = open.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
+    $("openList").classList.toggle("grouped", isAll);
+    $("openList").innerHTML = isAll ? groupedTaskListHtml(open) : open.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
 
     $("doneSection").hidden = done.length === 0;
     $("doneCount").textContent = done.length ? "（"+done.length+"）" : "";
-    $("doneList").innerHTML = done.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
+    $("doneList").classList.toggle("grouped", isAll);
+    $("doneList").innerHTML = isAll ? groupedTaskListHtml(done) : done.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
 
     document.querySelectorAll(".task-check").forEach(function(el){
       el.addEventListener("click", function(ev){
@@ -1140,7 +1220,10 @@ const db = getFirestore(fbApp);
     });
 
     if(tasksSortable){ tasksSortable.destroy(); tasksSortable = null; }
-    if(window.Sortable){
+    // Manual drag-reordering only makes sense for your own personal order;
+    // in "全員分" the list is sorted by assignee instead, so dragging is
+    // turned off there.
+    if(window.Sortable && !isAll){
       tasksSortable = new Sortable($("openList"), {
         handle: ".drag-handle",
         animation: 150,
@@ -1241,17 +1324,29 @@ const db = getFirestore(fbApp);
     editingTaskId = id || null;
     var t = id ? tasksMap.get(id) : null;
     var assignees = t ? taskAssignees(t) : [];
+    var editable = canEditTask(t);
     $("taskSheetTitle").textContent = id ? "タスクを編集" : "新しいタスク";
     $("taskTitleInput").value = t ? t.title || "" : "";
     $("taskAssigneeInput").value = assignees.map(function(a){ return a.name; }).filter(Boolean).join(", ");
     $("taskDetailInput").value = t ? t.detail || "" : "";
+    $("taskTitleInput").disabled = !editable;
+    $("taskAssigneeInput").disabled = !editable;
+    $("taskDetailInput").disabled = !editable;
     editingAssigneesSnapshot = assignees;
     editingCompletedBy = t ? Object.assign({}, taskCompletedByMap(t)) : {};
-    renderTaskAssigneeChecks();
-    $("taskDeleteBtn").hidden = !id;
-    $("taskMetaText").textContent = t ? (t.authorName||"") + " が作成 ・ 更新: " + fmtRelative(t.updatedAt) : "";
+    renderTaskAssigneeChecks(editable);
+    $("taskDeleteBtn").hidden = !id || !editable;
+    $("taskSaveBtn").hidden = !editable;
+    var metaBits = [];
+    if(t){
+      metaBits.push((t.authorName||"") + "が依頼");
+      metaBits.push("依頼: " + (fmtDateTime(t.createdAt) || "-"));
+      metaBits.push(t.done && t.completedAt ? "完了: " + fmtDateTime(t.completedAt) : "未完了");
+      if(!editable) metaBits.push("閲覧のみ（担当者・依頼者のみ編集できます）");
+    }
+    $("taskMetaText").textContent = metaBits.join(" ・ ");
     $("taskOverlay").classList.add("show");
-    setTimeout(function(){ $("taskTitleInput").focus(); }, 50);
+    setTimeout(function(){ if(editable) $("taskTitleInput").focus(); }, 50);
   }
   function closeTaskEditor(){ $("taskOverlay").classList.remove("show"); editingTaskId = null; }
 
@@ -1259,7 +1354,7 @@ const db = getFirestore(fbApp);
   // small trusted team, correct) who has finished their part. Only shown
   // once a task actually exists — a brand-new task has nobody assigned yet
   // to check off.
-  function renderTaskAssigneeChecks(){
+  function renderTaskAssigneeChecks(editable){
     var field = $("taskAssigneeChecksField");
     var wrap = $("taskAssigneeChecks");
     if(!editingTaskId || !editingAssigneesSnapshot.length){
@@ -1268,9 +1363,10 @@ const db = getFirestore(fbApp);
       return;
     }
     field.hidden = false;
+    var dis = editable ? "" : "disabled";
     wrap.innerHTML = editingAssigneesSnapshot.map(function(a){
       var checked = editingCompletedBy[a.uid] ? "checked" : "";
-      return '<label class="toggle-done"><input type="checkbox" data-uid="'+esc(a.uid)+'" '+checked+'> '+esc(a.name||"(不明)")+'</label>';
+      return '<label class="toggle-done"><input type="checkbox" data-uid="'+esc(a.uid)+'" '+checked+' '+dis+'> '+esc(a.name||"(不明)")+'</label>';
     }).join("");
     wrap.querySelectorAll("input[type=checkbox]").forEach(function(cb){
       cb.addEventListener("change", function(){
@@ -1392,6 +1488,12 @@ const db = getFirestore(fbApp);
   function toggleTaskDone(id){
     var t = tasksMap.get(id);
     if(!t) return;
+    if(!isTaskRelevantToMe(t)){
+      // Just viewing someone else's task via "全員分" — tapping opens the
+      // read-only detail instead of silently failing to toggle it.
+      openTaskEditor(id);
+      return;
+    }
     var assignees = taskAssignees(t);
     if(assignees.length > 1){
       // Several people are on this task: tapping only ever marks *your
@@ -1414,7 +1516,7 @@ const db = getFirestore(fbApp);
     // optimistic update: reflect the tap instantly, don't wait on the network
     tasksMap.set(id, Object.assign({}, t, { done: newDone, updatedAt: ts, completedAt: completedAt, completedBy: completedBy }));
     renderTasks();
-    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return canSeeTask(x) && !x.done;}).length;
+    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return isTaskRelevantToMe(x) && !x.done;}).length;
     updateDoc(doc(db,"tasks",id), { done: newDone, updatedAt: ts, completedAt: completedAt, completedBy: completedBy }).catch(function(){
       tasksMap.set(id, prev);
       renderTasks();
@@ -1437,7 +1539,7 @@ const db = getFirestore(fbApp);
     var completedAt = allDone ? ts : "";
     tasksMap.set(id, Object.assign({}, t, { completedBy: completedBy, done: allDone, updatedAt: ts, completedAt: completedAt }));
     renderTasks();
-    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return canSeeTask(x) && !x.done;}).length;
+    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return isTaskRelevantToMe(x) && !x.done;}).length;
     updateDoc(doc(db,"tasks",id), { completedBy: completedBy, done: allDone, updatedAt: ts, completedAt: completedAt }).catch(function(){
       tasksMap.set(id, prev);
       renderTasks();
@@ -1526,6 +1628,10 @@ const db = getFirestore(fbApp);
     if(currentUid){
       $("acctCurrentName").textContent = userName;
       $("acctCurrentEmail").textContent = (auth.currentUser && auth.currentUser.email) || "";
+      $("acctNameEditInput").value = userName;
+      $("acctNameEditMsg").hidden = true;
+      $("acctNameSaveBtn").disabled = false;
+      $("acctNameSaveBtn").textContent = "表示名を保存";
       $("acctLoggedInView").hidden = false;
       $("acctLoggedOutView").hidden = true;
     } else {
@@ -1552,6 +1658,39 @@ const db = getFirestore(fbApp);
   $("acctLogoutBtn").addEventListener("click", function(){
     signOut(auth).catch(function(){});
   });
+
+  function showNameEditMsg(msg, ok){
+    $("acctNameEditMsg").textContent = msg;
+    $("acctNameEditMsg").style.color = ok ? "var(--success)" : "var(--warn)";
+    $("acctNameEditMsg").hidden = false;
+  }
+  // Changes your display name going forward. This updates your profile
+  // (what teammates see when assigning you new tasks/notes from now on)
+  // and your Firebase Auth profile, but it does NOT rewrite the name
+  // already stored on tasks/notes you were assigned or authored before —
+  // those keep showing the name as it was at the time, the same way the
+  // rest of the app snapshots names.
+  function saveDisplayName(){
+    if(!currentUid) return;
+    var name = $("acctNameEditInput").value.trim();
+    if(!name){ showNameEditMsg("表示名を入力してください。", false); return; }
+    if(name === userName){ showNameEditMsg("今の表示名と同じです。", false); return; }
+    $("acctNameSaveBtn").disabled = true; $("acctNameSaveBtn").textContent = "保存中...";
+    setDoc(doc(db,"profiles",currentUid), { name: name }, { merge: true }).then(function(){
+      return updateProfile(auth.currentUser, { displayName: name }).catch(function(){});
+    }).then(function(){
+      userName = name;
+      updateUserChip();
+      $("acctCurrentName").textContent = userName;
+      renderAssigneeList();
+      showNameEditMsg("表示名を変更しました。", true);
+      $("acctNameSaveBtn").disabled = false; $("acctNameSaveBtn").textContent = "表示名を保存";
+    }).catch(function(){
+      showNameEditMsg("変更に失敗しました。もう一度お試しください。", false);
+      $("acctNameSaveBtn").disabled = false; $("acctNameSaveBtn").textContent = "表示名を保存";
+    });
+  }
+  $("acctNameSaveBtn").addEventListener("click", saveDisplayName);
 
   function authErrorMessage(err){
     var code = (err && err.code) || "";
@@ -1637,20 +1776,11 @@ const db = getFirestore(fbApp);
   function subscribeAll(uid){
     clearSubs();
     var notesPublicRaw = new Map(), notesMineRaw = new Map();
-    var tasksAssigneeRaw = new Map(), tasksAuthorRaw = new Map(), tasksAssigneeUidsRaw = new Map();
 
     function mergeNotes(){
       notesMap.clear();
       notesPublicRaw.forEach(function(v,k){ notesMap.set(k,v); });
       notesMineRaw.forEach(function(v,k){ notesMap.set(k,v); });
-      markReady();
-      safeRenderAll();
-    }
-    function mergeTasks(){
-      tasksMap.clear();
-      tasksAssigneeRaw.forEach(function(v,k){ tasksMap.set(k,v); });
-      tasksAssigneeUidsRaw.forEach(function(v,k){ tasksMap.set(k,v); });
-      tasksAuthorRaw.forEach(function(v,k){ tasksMap.set(k,v); });
       markReady();
       safeRenderAll();
     }
@@ -1667,25 +1797,14 @@ const db = getFirestore(fbApp);
       mergeNotes();
     }, function(){}));
 
-    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUid","==",uid)), function(qs){
-      tasksAssigneeRaw.clear();
-      qs.forEach(function(d){ tasksAssigneeRaw.set(d.id, d.data()); });
-      mergeTasks();
-    }, function(){}));
-
-    // Multi-assignee tasks (assigneeUids is an array): catches every
-    // co-assignee, including ones beyond the first — the single-field
-    // query above only ever matches the first assignee.
-    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUids","array-contains",uid)), function(qs){
-      tasksAssigneeUidsRaw.clear();
-      qs.forEach(function(d){ tasksAssigneeUidsRaw.set(d.id, d.data()); });
-      mergeTasks();
-    }, function(){}));
-
-    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("authorUid","==",uid)), function(qs){
-      tasksAuthorRaw.clear();
-      qs.forEach(function(d){ tasksAuthorRaw.set(d.id, d.data()); });
-      mergeTasks();
+    // Tasks are readable by the whole signed-in team now (so "全員分" can
+    // show everyone's tasks), so a single listener on the whole collection
+    // replaces the old per-person scoped queries.
+    unsubs.push(onSnapshot(collection(db,"tasks"), function(qs){
+      tasksMap.clear();
+      qs.forEach(function(d){ tasksMap.set(d.id, d.data()); });
+      markReady();
+      safeRenderAll();
     }, function(){}));
 
     unsubs.push(onSnapshot(collection(db,"profiles"), function(qs){
