@@ -581,6 +581,42 @@
   }
   .field input:focus, .field textarea:focus{border-color:var(--accent);}
   .field textarea{min-height:120px; line-height:1.6; font-family:inherit;}
+  .assignee-picker-btn{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    border:1px solid var(--border);
+    background:var(--bg);
+    color:var(--ink);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:14.5px;
+    font-family:inherit;
+    text-align:left;
+    width:100%;
+    cursor:pointer;
+  }
+  .assignee-picker-btn.placeholder{color:var(--ink-faint);}
+  .assignee-picker-btn:disabled{opacity:.6; cursor:default;}
+  .assignee-picker-btn .chev{width:14px;height:14px;flex-shrink:0;color:var(--ink-faint);}
+  .assignee-dropdown{
+    margin-top:6px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:var(--surface);
+    box-shadow:var(--shadow);
+    max-height:220px;
+    overflow-y:auto;
+  }
+  .assignee-dropdown label{
+    display:flex; align-items:center; gap:8px;
+    padding:9px 12px;
+    font-size:13.5px;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .assignee-dropdown label:hover{background:var(--surface-2);}
+  .assignee-dropdown label + label{border-top:1px solid var(--border);}
+  .assignee-dropdown input[type=checkbox]{width:16px;height:16px;flex-shrink:0;}
+  .assignee-dropdown .empty-opt{padding:10px 12px; font-size:12.5px; color:var(--ink-faint);}
   .note-body-field{flex:1;}
   .note-body-field textarea{min-height:40vh;}
   #noteOverlay .sheet{max-height:94vh;}
@@ -748,11 +784,14 @@
       <input id="taskTitleInput" type="text" maxlength="120" placeholder="例）請求書を送付する">
     </div>
     <div class="field">
-      <label for="taskAssigneeInput">担当者</label>
-      <input id="taskAssigneeInput" type="text" list="assigneeList" maxlength="120" placeholder="例）社長, 鈴木">
-      <datalist id="assigneeList"></datalist>
+      <label>担当者</label>
+      <button type="button" class="assignee-picker-btn placeholder" id="assigneePickerBtn">
+        <span id="assigneePickerLabel">担当者を選択（未選択の場合は自分）</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="assignee-dropdown" id="assigneeDropdown" hidden></div>
     </div>
-    <div class="helptext" id="taskAssigneeHelp">自分以外の名前を入れると、その人にタスクを依頼できます（相手がすでにアカウント登録済みの名前である必要があります）。カンマ区切りで複数人を指定すると、全員が完了した時点でこのタスクは完了になります。</div>
+    <div class="helptext" id="taskAssigneeHelp">複数人を選ぶと、全員にタスクが依頼され、全員が完了した時点でこのタスクは完了になります。</div>
     <div class="field">
       <label for="taskDetailInput">メモ（任意）</label>
       <textarea id="taskDetailInput" placeholder="補足があれば"></textarea>
@@ -919,6 +958,8 @@ const db = getFirestore(fbApp);
   var editingTaskId = null;
   var editingCompletedBy = {};
   var editingAssigneesSnapshot = [];
+  var editingSelectedAssignees = []; // [{uid, name}, ...] currently checked in the picker
+  var assigneeDropdownOpen = false;
   var connTimer = null;
   var unsubs = [];
 
@@ -1233,13 +1274,27 @@ const db = getFirestore(fbApp);
     }
   }
 
+  // The list of people selectable as a task's assignee(s): every
+  // registered teammate (from their profile doc) plus yourself, deduped
+  // and sorted by name.
+  function buildAssigneeOptions(){
+    var list = [];
+    var seen = {};
+    if(currentUid && userName){ list.push({ uid: currentUid, name: userName }); seen[currentUid] = true; }
+    profilesMap.forEach(function(name, uid){
+      if(!name || seen[uid]) return;
+      seen[uid] = true;
+      list.push({ uid: uid, name: name });
+    });
+    list.sort(function(a,b){ return a.name.localeCompare(b.name, "ja"); });
+    return list;
+  }
+  // Refreshes anything that depends on the roster of selectable people —
+  // called whenever profiles change. If the assignee dropdown happens to
+  // be open right now, it's redrawn in place so a newly-registered
+  // teammate shows up without the user having to reopen it.
   function renderAssigneeList(){
-    var names = new Set();
-    profilesMap.forEach(function(n){ if(n) names.add(n); });
-    if(userName) names.add(userName);
-    $("assigneeList").innerHTML = Array.from(names).sort().map(function(n){
-      return '<option value="'+esc(n)+'">';
-    }).join("");
+    if(assigneeDropdownOpen) renderAssigneeDropdown();
   }
 
   function matches(hay, q){
@@ -1327,11 +1382,13 @@ const db = getFirestore(fbApp);
     var editable = canEditTask(t);
     $("taskSheetTitle").textContent = id ? "タスクを編集" : "新しいタスク";
     $("taskTitleInput").value = t ? t.title || "" : "";
-    $("taskAssigneeInput").value = assignees.map(function(a){ return a.name; }).filter(Boolean).join(", ");
     $("taskDetailInput").value = t ? t.detail || "" : "";
     $("taskTitleInput").disabled = !editable;
-    $("taskAssigneeInput").disabled = !editable;
     $("taskDetailInput").disabled = !editable;
+    editingSelectedAssignees = assignees.map(function(a){ return { uid: a.uid, name: a.name }; });
+    $("assigneePickerBtn").disabled = !editable;
+    closeAssigneeDropdown();
+    renderAssigneePickerButton();
     editingAssigneesSnapshot = assignees;
     editingCompletedBy = t ? Object.assign({}, taskCompletedByMap(t)) : {};
     renderTaskAssigneeChecks(editable);
@@ -1348,7 +1405,63 @@ const db = getFirestore(fbApp);
     $("taskOverlay").classList.add("show");
     setTimeout(function(){ if(editable) $("taskTitleInput").focus(); }, 50);
   }
-  function closeTaskEditor(){ $("taskOverlay").classList.remove("show"); editingTaskId = null; }
+  function closeTaskEditor(){ $("taskOverlay").classList.remove("show"); editingTaskId = null; closeAssigneeDropdown(); }
+
+  function assigneePickerLabelText(){
+    if(!editingSelectedAssignees.length) return "担当者を選択（未選択の場合は自分）";
+    return editingSelectedAssignees.map(function(a){ return a.name; }).join("、");
+  }
+  function renderAssigneePickerButton(){
+    $("assigneePickerLabel").textContent = assigneePickerLabelText();
+    $("assigneePickerBtn").classList.toggle("placeholder", !editingSelectedAssignees.length);
+  }
+  function renderAssigneeDropdown(){
+    var wrap = $("assigneeDropdown");
+    var opts = buildAssigneeOptions();
+    if(!opts.length){
+      wrap.innerHTML = '<div class="empty-opt">選べる相手がいません</div>';
+      return;
+    }
+    var selectedUids = {};
+    editingSelectedAssignees.forEach(function(a){ selectedUids[a.uid] = true; });
+    wrap.innerHTML = opts.map(function(o){
+      var checked = selectedUids[o.uid] ? "checked" : "";
+      var meTag = o.uid === currentUid ? "（自分）" : "";
+      return '<label><input type="checkbox" data-uid="'+esc(o.uid)+'" data-name="'+esc(o.name)+'" '+checked+'> '+esc(o.name)+meTag+'</label>';
+    }).join("");
+    wrap.querySelectorAll("input[type=checkbox]").forEach(function(cb){
+      cb.addEventListener("change", function(){
+        var uid = cb.dataset.uid, name = cb.dataset.name;
+        if(cb.checked){
+          if(!editingSelectedAssignees.some(function(a){ return a.uid === uid; })){
+            editingSelectedAssignees.push({ uid: uid, name: name });
+          }
+        } else {
+          editingSelectedAssignees = editingSelectedAssignees.filter(function(a){ return a.uid !== uid; });
+        }
+        renderAssigneePickerButton();
+      });
+    });
+  }
+  function openAssigneeDropdown(){
+    if($("assigneePickerBtn").disabled) return;
+    renderAssigneeDropdown();
+    $("assigneeDropdown").hidden = false;
+    assigneeDropdownOpen = true;
+  }
+  function closeAssigneeDropdown(){
+    $("assigneeDropdown").hidden = true;
+    assigneeDropdownOpen = false;
+  }
+  $("assigneePickerBtn").addEventListener("click", function(ev){
+    ev.stopPropagation();
+    if(assigneeDropdownOpen) closeAssigneeDropdown(); else openAssigneeDropdown();
+  });
+  document.addEventListener("click", function(ev){
+    if(assigneeDropdownOpen && !ev.target.closest("#assigneeDropdown") && !ev.target.closest("#assigneePickerBtn")){
+      closeAssigneeDropdown();
+    }
+  });
 
   // Shows one checkbox per current assignee so you can see (and, for a
   // small trusted team, correct) who has finished their part. Only shown
@@ -1418,31 +1531,16 @@ const db = getFirestore(fbApp);
     ensureAccount(function(){
       var ts = nowIso();
       var prevTask = editingTaskId ? tasksMap.get(editingTaskId) : null;
-      var rawNames = $("taskAssigneeInput").value.split(/[,、]/).map(function(s){ return s.trim(); }).filter(Boolean);
-      var assigneeUids = [], assigneeNames = [], unknown = [];
-      rawNames.forEach(function(nm){
-        var uid = lookupUidByName(nm);
-        if(uid){ assigneeUids.push(uid); assigneeNames.push(nm); }
-        else { unknown.push(nm); }
-      });
-      if(unknown.length){
-        alert("次の名前の相手が見つかりませんでした（登録済みの名前を入力してください）: " + unknown.join("、"));
-      }
+      // The picker only ever lets you check off real, registered teammates,
+      // so there's no "name not found" case to handle here any more.
+      var assigneeUids = editingSelectedAssignees.map(function(a){ return a.uid; });
+      var assigneeNames = editingSelectedAssignees.map(function(a){ return a.name; });
       if(!assigneeUids.length){
-        // Nobody resolved (left blank, or no names matched): treat it as
-        // your own personal task rather than an unassigned one nobody
-        // would ever see.
+        // Nobody selected: treat it as your own personal task rather than
+        // an unassigned one nobody would ever see.
         assigneeUids = [currentUid];
         assigneeNames = [userName];
       }
-      // De-dupe in case the same person was typed twice.
-      var seen = {}, dedupU = [], dedupN = [];
-      assigneeUids.forEach(function(uid, i){
-        if(seen[uid]) return;
-        seen[uid] = true;
-        dedupU.push(uid); dedupN.push(assigneeNames[i]);
-      });
-      assigneeUids = dedupU; assigneeNames = dedupN;
 
       // Carry over completion state from the editor checklist, but drop
       // anyone who's no longer on the task.
