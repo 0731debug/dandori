@@ -581,6 +581,19 @@
   }
   .field input:focus, .field textarea:focus{border-color:var(--accent);}
   .field textarea{min-height:120px; line-height:1.6; font-family:inherit;}
+  .field select{
+    border:1px solid var(--border);
+    background:var(--bg);
+    color:var(--ink);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:14.5px;
+    font-family:inherit;
+    outline:none;
+    width:100%;
+  }
+  .field select:focus{border-color:var(--accent);}
+  #allAssigneeFilterWrap{margin-bottom:14px;}
   .assignee-picker-btn{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
     border:1px solid var(--border);
@@ -729,6 +742,12 @@
         <button class="chip active" data-filter="mine">自分のタスク</button>
         <button class="chip" data-filter="requested">依頼した分</button>
         <button class="chip" data-filter="all">全員分</button>
+      </div>
+      <div class="field" id="allAssigneeFilterWrap" hidden>
+        <label for="allAssigneeFilterSelect">担当者で絞り込み</label>
+        <select id="allAssigneeFilterSelect">
+          <option value="">全員（担当者ごとにまとめて表示）</option>
+        </select>
       </div>
       <div class="task-section">
         <div class="section-title" id="openTitle"><span class="chev">▾</span><span>未完了</span><span id="openCount"></span></div>
@@ -954,6 +973,7 @@ const db = getFirestore(fbApp);
   var searchQuery = "";
   var notesFilter = "public";
   var tasksFilter = "mine";
+  var allAssigneeFilter = ""; // uid, or "" for everyone — only used within the "全員分" tab
   var editingNoteId = null;
   var editingTaskId = null;
   var editingCompletedBy = {};
@@ -1092,7 +1112,9 @@ const db = getFirestore(fbApp);
       var unassigned = assignees.length === 0;
       if(tasksFilter === "mine") return isAssignee || (unassigned && isMineUid(t.authorUid));
       if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isAssignee && assignees.length > 0;
-      // "all": every task the whole team has, regardless of who's on it.
+      // "all": every task the whole team has, regardless of who's on it —
+      // optionally narrowed down to one specific person via the dropdown.
+      if(allAssigneeFilter) return assignees.some(function(a){ return a.uid === allAssigneeFilter; });
       return true;
     });
   }
@@ -1224,8 +1246,14 @@ const db = getFirestore(fbApp);
     var open = all.filter(function(e){ return !e[1].done; });
     var done = all.filter(function(e){ return e[1].done; });
     var isAll = tasksFilter === "all";
+    // Once narrowed to one specific person via the dropdown, every row
+    // already shares the same assignee, so the group headers would be
+    // redundant noise — only show them for the unfiltered "全員" view.
+    var showGroups = isAll && !allAssigneeFilter;
 
-    if(isAll){
+    $("allAssigneeFilterWrap").hidden = !isAll;
+
+    if(showGroups){
       open.sort(compareByAssigneeGroup);
       done.sort(compareByAssigneeGroup);
     } else {
@@ -1235,13 +1263,13 @@ const db = getFirestore(fbApp);
 
     $("tasksEmpty").hidden = (open.length + done.length) !== 0;
     $("openCount").textContent = open.length ? "（"+open.length+"）" : "";
-    $("openList").classList.toggle("grouped", isAll);
-    $("openList").innerHTML = isAll ? groupedTaskListHtml(open) : open.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
+    $("openList").classList.toggle("grouped", showGroups);
+    $("openList").innerHTML = showGroups ? groupedTaskListHtml(open) : open.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
 
     $("doneSection").hidden = done.length === 0;
     $("doneCount").textContent = done.length ? "（"+done.length+"）" : "";
-    $("doneList").classList.toggle("grouped", isAll);
-    $("doneList").innerHTML = isAll ? groupedTaskListHtml(done) : done.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
+    $("doneList").classList.toggle("grouped", showGroups);
+    $("doneList").innerHTML = showGroups ? groupedTaskListHtml(done) : done.map(function(e){ return taskRowHtml(e[0], e[1]); }).join("");
 
     document.querySelectorAll(".task-check").forEach(function(el){
       el.addEventListener("click", function(ev){
@@ -1295,6 +1323,21 @@ const db = getFirestore(fbApp);
   // teammate shows up without the user having to reopen it.
   function renderAssigneeList(){
     if(assigneeDropdownOpen) renderAssigneeDropdown();
+    renderAllAssigneeFilterOptions();
+  }
+  // Populates the "担当者で絞り込み" dropdown shown on the "全員分" tab,
+  // keeping whichever person is currently selected if they're still valid.
+  function renderAllAssigneeFilterOptions(){
+    var sel = $("allAssigneeFilterSelect");
+    var opts = buildAssigneeOptions();
+    var stillValid = opts.some(function(o){ return o.uid === allAssigneeFilter; });
+    if(!stillValid) allAssigneeFilter = "";
+    sel.innerHTML = '<option value="">全員（担当者ごとにまとめて表示）</option>' +
+      opts.map(function(o){
+        var sameAsMe = o.uid === currentUid ? "（自分）" : "";
+        return '<option value="'+esc(o.uid)+'">'+esc(o.name)+sameAsMe+'</option>';
+      }).join("");
+    sel.value = allAssigneeFilter;
   }
 
   function matches(hay, q){
@@ -1681,8 +1724,13 @@ const db = getFirestore(fbApp);
       document.querySelectorAll("#tasksFilterChips .chip").forEach(function(c){
         c.classList.toggle("active", c === b);
       });
+      if(tasksFilter === "all") renderAllAssigneeFilterOptions();
       renderTasks();
     });
+  });
+  $("allAssigneeFilterSelect").addEventListener("change", function(){
+    allAssigneeFilter = this.value;
+    renderTasks();
   });
 
   $("noteSaveBtn").addEventListener("click", saveNote);
