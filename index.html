@@ -461,7 +461,10 @@
     font-variant-numeric:tabular-nums;
   }
   .pill.assignee{background:var(--accent-soft); color:var(--accent-strong);}
+  .pill.assignee.done{background:var(--task-soft); color:var(--task-accent); text-decoration:line-through; opacity:.75;}
   .pill.from{background:transparent; border:1px dashed var(--border); color:var(--ink-faint);}
+  #taskAssigneeChecks{display:flex; flex-direction:column; gap:6px;}
+  #taskAssigneeChecks .toggle-done{margin:0;}
   .pill.due{background:var(--surface-2); color:var(--ink-muted);}
   .pill.due.overdue{background:var(--warn-soft); color:var(--warn);}
   .pill.due.today{background:var(--task-soft); color:var(--task-accent);}
@@ -737,15 +740,18 @@
     </div>
     <div class="field">
       <label for="taskAssigneeInput">担当者</label>
-      <input id="taskAssigneeInput" type="text" list="assigneeList" maxlength="40" placeholder="例）社長">
+      <input id="taskAssigneeInput" type="text" list="assigneeList" maxlength="120" placeholder="例）社長, 鈴木">
       <datalist id="assigneeList"></datalist>
     </div>
-    <div class="helptext" id="taskAssigneeHelp">自分以外の名前を入れると、その人にタスクを依頼できます（相手がすでにアカウント登録済みの名前である必要があります）。</div>
+    <div class="helptext" id="taskAssigneeHelp">自分以外の名前を入れると、その人にタスクを依頼できます（相手がすでにアカウント登録済みの名前である必要があります）。カンマ区切りで複数人を指定すると、全員が完了した時点でこのタスクは完了になります。</div>
     <div class="field">
       <label for="taskDetailInput">メモ（任意）</label>
       <textarea id="taskDetailInput" placeholder="補足があれば"></textarea>
     </div>
-    <label class="toggle-done"><input type="checkbox" id="taskDoneInput"> 完了にする</label>
+    <div class="field" id="taskAssigneeChecksField" hidden>
+      <label>完了状況</label>
+      <div id="taskAssigneeChecks"></div>
+    </div>
     <div class="helptext" id="taskMetaText"></div>
     <div class="sheet-actions">
       <button class="btn danger" id="taskDeleteBtn" hidden>削除</button>
@@ -884,6 +890,8 @@ const db = getFirestore(fbApp);
   var tasksFilter = "mine";
   var editingNoteId = null;
   var editingTaskId = null;
+  var editingCompletedBy = {};
+  var editingAssigneesSnapshot = [];
   var connTimer = null;
   var unsubs = [];
 
@@ -897,7 +905,40 @@ const db = getFirestore(fbApp);
   // asked someone else to do it — other people's tasks that don't
   // involve me at all stay out of sight entirely.
   function canSeeTask(t){
-    return isMineUid(t.assigneeUid) || isMineUid(t.authorUid);
+    return taskIsAssignee(t, currentUid) || isMineUid(t.authorUid);
+  }
+  // Normalizes a task's assignee(s) into an array of {uid, name}, whether
+  // it uses the newer multi-assignee shape (assigneeUids/assigneeNames) or
+  // the original single-assignee fields (assigneeUid/assigneeName) that
+  // older tasks already stored in Firestore still have.
+  function taskAssignees(t){
+    if(Array.isArray(t.assigneeUids) && t.assigneeUids.length){
+      return t.assigneeUids.map(function(uid, i){
+        return { uid: uid, name: (t.assigneeNames && t.assigneeNames[i]) || "" };
+      });
+    }
+    if(t.assigneeUid){
+      return [{ uid: t.assigneeUid, name: t.assigneeName || "" }];
+    }
+    return [];
+  }
+  function taskIsAssignee(t, uid){
+    if(!uid) return false;
+    return taskAssignees(t).some(function(a){ return a.uid === uid; });
+  }
+  // Older tasks (created before per-assignee completion existed) only ever
+  // had a single assignee and a plain `done` flag. This rebuilds an
+  // equivalent completedBy map for them so the rest of the code can treat
+  // every task the same way.
+  function legacyCompletedByFallback(t){
+    var map = {};
+    if(t.done){
+      taskAssignees(t).forEach(function(a){ map[a.uid] = t.completedAt || t.updatedAt || nowIso(); });
+    }
+    return map;
+  }
+  function taskCompletedByMap(t){
+    return t.completedBy || legacyCompletedByFallback(t);
   }
   function lookupUidByName(name){
     if(!name) return "";
@@ -961,11 +1002,13 @@ const db = getFirestore(fbApp);
     return Array.from(tasksMap.entries()).filter(function(e){
       var t = e[1];
       if(!canSeeTask(t)) return false;
+      var assignees = taskAssignees(t);
+      var isAssignee = assignees.some(function(a){ return isMineUid(a.uid); });
       // A task with no assignee at all is effectively a personal task for
       // whoever created it, so it counts as "mine" for its author too.
-      var unassigned = !t.assigneeUid;
-      if(tasksFilter === "mine") return isMineUid(t.assigneeUid) || (unassigned && isMineUid(t.authorUid));
-      if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isMineUid(t.assigneeUid) && !!t.assigneeName;
+      var unassigned = assignees.length === 0;
+      if(tasksFilter === "mine") return isAssignee || (unassigned && isMineUid(t.authorUid));
+      if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isAssignee && assignees.length > 0;
       return true;
     });
   }
@@ -1036,12 +1079,18 @@ const db = getFirestore(fbApp);
   }
 
   function taskRowHtml(id, t){
+    var assignees = taskAssignees(t);
+    var completedBy = taskCompletedByMap(t);
     var meta = "";
-    if(t.authorName && t.assigneeName && t.authorUid !== t.assigneeUid){
+    var authorIsAssignee = assignees.some(function(a){ return a.uid === t.authorUid; });
+    if(t.authorName && assignees.length && !authorIsAssignee){
       meta += '<span class="pill from">'+esc(t.authorName)+'より</span>';
     }
-    if(t.assigneeName) meta += '<span class="pill assignee">'+esc(t.assigneeName)+'</span>';
-    var mine = isMineUid(t.assigneeUid) ? " assigned-to-me" : "";
+    assignees.forEach(function(a){
+      var done = !!completedBy[a.uid];
+      meta += '<span class="pill assignee'+(done?' done':'')+'">'+esc(a.name||"(不明)")+(done?' ✓':'')+'</span>';
+    });
+    var mine = assignees.some(function(a){ return isMineUid(a.uid); }) ? " assigned-to-me" : "";
     var times = "依頼: " + (fmtRelative(t.createdAt) || "-");
     if(t.done && t.completedAt){ times += " ・完了: " + fmtRelative(t.completedAt); }
     return '<div class="task-row'+(t.done?' is-done':'')+mine+'" data-id="'+id+'">' +
@@ -1135,7 +1184,8 @@ const db = getFirestore(fbApp);
     });
     tasksMap.forEach(function(t, id){
       if(!canSeeTask(t)) return;
-      if(matches(t.title, q) || matches(t.detail, q) || matches(t.assigneeName, q)){
+      var assigneeNamesStr = taskAssignees(t).map(function(a){ return a.name; }).join(" ");
+      if(matches(t.title, q) || matches(t.detail, q) || matches(assigneeNamesStr, q)){
         results.push({type:"task", id:id, data:t, sortKey:t.updatedAt||""});
       }
     });
@@ -1153,7 +1203,8 @@ const db = getFirestore(fbApp);
           '</div>';
       } else {
         var bits = [];
-        if(r.data.assigneeName) bits.push(esc(r.data.assigneeName));
+        var names = taskAssignees(r.data).map(function(a){ return a.name; }).filter(Boolean);
+        if(names.length) bits.push(esc(names.join("、")));
         if(r.data.done) bits.push("完了");
         return '<div class="result-row" data-type="task" data-id="'+r.id+'">' +
           '<div class="result-top"><span class="pill type-task">タスク</span><span class="result-title">'+highlight(r.data.title||"(無題)", searchQuery)+'</span></div>' +
@@ -1189,17 +1240,46 @@ const db = getFirestore(fbApp);
   function openTaskEditor(id){
     editingTaskId = id || null;
     var t = id ? tasksMap.get(id) : null;
+    var assignees = t ? taskAssignees(t) : [];
     $("taskSheetTitle").textContent = id ? "タスクを編集" : "新しいタスク";
     $("taskTitleInput").value = t ? t.title || "" : "";
-    $("taskAssigneeInput").value = t ? t.assigneeName || "" : "";
+    $("taskAssigneeInput").value = assignees.map(function(a){ return a.name; }).filter(Boolean).join(", ");
     $("taskDetailInput").value = t ? t.detail || "" : "";
-    $("taskDoneInput").checked = t ? !!t.done : false;
+    editingAssigneesSnapshot = assignees;
+    editingCompletedBy = t ? Object.assign({}, taskCompletedByMap(t)) : {};
+    renderTaskAssigneeChecks();
     $("taskDeleteBtn").hidden = !id;
     $("taskMetaText").textContent = t ? (t.authorName||"") + " が作成 ・ 更新: " + fmtRelative(t.updatedAt) : "";
     $("taskOverlay").classList.add("show");
     setTimeout(function(){ $("taskTitleInput").focus(); }, 50);
   }
   function closeTaskEditor(){ $("taskOverlay").classList.remove("show"); editingTaskId = null; }
+
+  // Shows one checkbox per current assignee so you can see (and, for a
+  // small trusted team, correct) who has finished their part. Only shown
+  // once a task actually exists — a brand-new task has nobody assigned yet
+  // to check off.
+  function renderTaskAssigneeChecks(){
+    var field = $("taskAssigneeChecksField");
+    var wrap = $("taskAssigneeChecks");
+    if(!editingTaskId || !editingAssigneesSnapshot.length){
+      field.hidden = true;
+      wrap.innerHTML = "";
+      return;
+    }
+    field.hidden = false;
+    wrap.innerHTML = editingAssigneesSnapshot.map(function(a){
+      var checked = editingCompletedBy[a.uid] ? "checked" : "";
+      return '<label class="toggle-done"><input type="checkbox" data-uid="'+esc(a.uid)+'" '+checked+'> '+esc(a.name||"(不明)")+'</label>';
+    }).join("");
+    wrap.querySelectorAll("input[type=checkbox]").forEach(function(cb){
+      cb.addEventListener("change", function(){
+        var uid = cb.dataset.uid;
+        if(cb.checked) editingCompletedBy[uid] = nowIso();
+        else delete editingCompletedBy[uid];
+      });
+    });
+  }
 
   /* ---------------- writes ---------------- */
   function ensureAccount(cb){
@@ -1241,41 +1321,65 @@ const db = getFirestore(fbApp);
     if(!title){ closeTaskEditor(); return; }
     ensureAccount(function(){
       var ts = nowIso();
-      var assigneeName = $("taskAssigneeInput").value.trim();
-      var assigneeUid;
-      if(assigneeName){
-        assigneeUid = lookupUidByName(assigneeName);
-      } else {
-        // Left blank: treat it as your own personal task rather than an
-        // unassigned one nobody would ever see.
-        assigneeName = userName;
-        assigneeUid = currentUid;
+      var prevTask = editingTaskId ? tasksMap.get(editingTaskId) : null;
+      var rawNames = $("taskAssigneeInput").value.split(/[,、]/).map(function(s){ return s.trim(); }).filter(Boolean);
+      var assigneeUids = [], assigneeNames = [], unknown = [];
+      rawNames.forEach(function(nm){
+        var uid = lookupUidByName(nm);
+        if(uid){ assigneeUids.push(uid); assigneeNames.push(nm); }
+        else { unknown.push(nm); }
+      });
+      if(unknown.length){
+        alert("次の名前の相手が見つかりませんでした（登録済みの名前を入力してください）: " + unknown.join("、"));
       }
-      var nowDone = $("taskDoneInput").checked;
+      if(!assigneeUids.length){
+        // Nobody resolved (left blank, or no names matched): treat it as
+        // your own personal task rather than an unassigned one nobody
+        // would ever see.
+        assigneeUids = [currentUid];
+        assigneeNames = [userName];
+      }
+      // De-dupe in case the same person was typed twice.
+      var seen = {}, dedupU = [], dedupN = [];
+      assigneeUids.forEach(function(uid, i){
+        if(seen[uid]) return;
+        seen[uid] = true;
+        dedupU.push(uid); dedupN.push(assigneeNames[i]);
+      });
+      assigneeUids = dedupU; assigneeNames = dedupN;
+
+      // Carry over completion state from the editor checklist, but drop
+      // anyone who's no longer on the task.
+      var completedBy = {};
+      assigneeUids.forEach(function(uid){
+        if(editingCompletedBy[uid]) completedBy[uid] = editingCompletedBy[uid];
+      });
+      var allDone = assigneeUids.length > 0 && assigneeUids.every(function(uid){ return !!completedBy[uid]; });
+      var wasDone = !!(prevTask && prevTask.done);
+      // Keep the original completion timestamp if it was already fully
+      // done and still is, rather than bumping it on every unrelated edit.
+      var completedAt = allDone ? ((wasDone && prevTask.completedAt) ? prevTask.completedAt : ts) : "";
+
       var fields = {
         title: title,
-        assigneeName: assigneeName,
-        assigneeUid: assigneeUid,
+        assigneeUids: assigneeUids,
+        assigneeNames: assigneeNames,
+        // Back-compat single fields kept in sync with the first assignee.
+        assigneeUid: assigneeUids[0] || "",
+        assigneeName: assigneeNames[0] || "",
         detail: $("taskDetailInput").value.trim(),
-        done: nowDone,
+        completedBy: completedBy,
+        done: allDone,
+        completedAt: completedAt,
         updatedAt: ts
       };
       if(editingTaskId){
-        var prevTask = tasksMap.get(editingTaskId);
-        if(nowDone && !(prevTask && prevTask.done)){
-          // Just got checked off in the sheet: stamp the completion time.
-          fields.completedAt = ts;
-        } else if(!nowDone){
-          // Reopened: clear any previous completion time.
-          fields.completedAt = "";
-        }
         updateDoc(doc(db,"tasks",editingTaskId), fields).catch(function(){});
       } else {
         fields.authorUid = currentUid;
         fields.authorName = userName;
         fields.createdAt = ts;
         fields.order = Date.now();
-        fields.completedAt = nowDone ? ts : "";
         addDoc(collection(db,"tasks"), fields).catch(function(){});
       }
       closeTaskEditor();
@@ -1288,15 +1392,53 @@ const db = getFirestore(fbApp);
   function toggleTaskDone(id){
     var t = tasksMap.get(id);
     if(!t) return;
+    var assignees = taskAssignees(t);
+    if(assignees.length > 1){
+      // Several people are on this task: tapping only ever marks *your
+      // own* part done. If you're not one of the assignees (e.g. you're
+      // just the person who requested it), open the editor instead so you
+      // can see everyone's status rather than guessing whose box to tick.
+      if(!taskIsAssignee(t, currentUid)){ openTaskEditor(id); return; }
+      toggleAssigneeCompletion(id, currentUid);
+      return;
+    }
+    // Single assignee (or a legacy/unassigned task): behave as before —
+    // anyone with access (the assignee or the author) can flip it from
+    // the list with one tap.
     var prev = t;
     var newDone = !t.done;
     var ts = nowIso();
     var completedAt = newDone ? ts : "";
+    var completedBy = {};
+    if(newDone){ assignees.forEach(function(a){ completedBy[a.uid] = ts; }); }
     // optimistic update: reflect the tap instantly, don't wait on the network
-    tasksMap.set(id, Object.assign({}, t, { done: newDone, updatedAt: ts, completedAt: completedAt }));
+    tasksMap.set(id, Object.assign({}, t, { done: newDone, updatedAt: ts, completedAt: completedAt, completedBy: completedBy }));
     renderTasks();
     $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return canSeeTask(x) && !x.done;}).length;
-    updateDoc(doc(db,"tasks",id), { done: newDone, updatedAt: ts, completedAt: completedAt }).catch(function(){
+    updateDoc(doc(db,"tasks",id), { done: newDone, updatedAt: ts, completedAt: completedAt, completedBy: completedBy }).catch(function(){
+      tasksMap.set(id, prev);
+      renderTasks();
+    });
+  }
+
+  // Toggles one specific assignee's own completion on a multi-assignee
+  // task; the task as a whole only flips to "done" once every assignee
+  // has been checked off this way.
+  function toggleAssigneeCompletion(id, uid){
+    var t = tasksMap.get(id);
+    if(!t) return;
+    var prev = t;
+    var assignees = taskAssignees(t);
+    var completedBy = Object.assign({}, taskCompletedByMap(t));
+    var ts = nowIso();
+    if(completedBy[uid]) delete completedBy[uid];
+    else completedBy[uid] = ts;
+    var allDone = assignees.length > 0 && assignees.every(function(a){ return !!completedBy[a.uid]; });
+    var completedAt = allDone ? ts : "";
+    tasksMap.set(id, Object.assign({}, t, { completedBy: completedBy, done: allDone, updatedAt: ts, completedAt: completedAt }));
+    renderTasks();
+    $("cntTasks").textContent = Array.from(tasksMap.values()).filter(function(x){return canSeeTask(x) && !x.done;}).length;
+    updateDoc(doc(db,"tasks",id), { completedBy: completedBy, done: allDone, updatedAt: ts, completedAt: completedAt }).catch(function(){
       tasksMap.set(id, prev);
       renderTasks();
     });
@@ -1495,7 +1637,7 @@ const db = getFirestore(fbApp);
   function subscribeAll(uid){
     clearSubs();
     var notesPublicRaw = new Map(), notesMineRaw = new Map();
-    var tasksAssigneeRaw = new Map(), tasksAuthorRaw = new Map();
+    var tasksAssigneeRaw = new Map(), tasksAuthorRaw = new Map(), tasksAssigneeUidsRaw = new Map();
 
     function mergeNotes(){
       notesMap.clear();
@@ -1507,6 +1649,7 @@ const db = getFirestore(fbApp);
     function mergeTasks(){
       tasksMap.clear();
       tasksAssigneeRaw.forEach(function(v,k){ tasksMap.set(k,v); });
+      tasksAssigneeUidsRaw.forEach(function(v,k){ tasksMap.set(k,v); });
       tasksAuthorRaw.forEach(function(v,k){ tasksMap.set(k,v); });
       markReady();
       safeRenderAll();
@@ -1527,6 +1670,15 @@ const db = getFirestore(fbApp);
     unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUid","==",uid)), function(qs){
       tasksAssigneeRaw.clear();
       qs.forEach(function(d){ tasksAssigneeRaw.set(d.id, d.data()); });
+      mergeTasks();
+    }, function(){}));
+
+    // Multi-assignee tasks (assigneeUids is an array): catches every
+    // co-assignee, including ones beyond the first — the single-field
+    // query above only ever matches the first assignee.
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUids","array-contains",uid)), function(qs){
+      tasksAssigneeUidsRaw.clear();
+      qs.forEach(function(d){ tasksAssigneeUidsRaw.set(d.id, d.data()); });
       mergeTasks();
     }, function(){}));
 
@@ -1560,7 +1712,7 @@ const db = getFirestore(fbApp);
         tx.set(taskRef, {
           title: "このタスクをタップして完了にしてみる",
           detail: "チェックをつけると「完了」に移動します。",
-          assigneeUid: "", assigneeName: "", done: false, completedAt: "",
+          assigneeUid: "", assigneeName: "", assigneeUids: [], assigneeNames: [], completedBy: {}, done: false, completedAt: "",
           authorUid: uid, authorName: name, order: Date.now(), createdAt: ts, updatedAt: ts
         });
         tx.set(metaRef, { seeded: true, seededAt: ts });
