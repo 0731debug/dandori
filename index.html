@@ -594,6 +594,65 @@
   }
   .field select:focus{border-color:var(--accent);}
   #allAssigneeFilterWrap{margin-bottom:14px;}
+  .dropzone{
+    border:1.5px dashed var(--border);
+    border-radius:12px;
+    padding:16px 10px;
+    text-align:center;
+    font-size:12.5px;
+    color:var(--ink-faint);
+    cursor:pointer;
+    transition:border-color .12s ease, background .12s ease;
+  }
+  .dropzone:hover{border-color:var(--accent);}
+  .dropzone.dragover{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-strong);}
+  .dropzone.disabled{cursor:default; opacity:.6;}
+  .image-thumbs{
+    display:flex; flex-wrap:wrap; gap:8px;
+    margin-top:2px;
+  }
+  .image-thumbs:empty{margin-top:0;}
+  .image-thumb{
+    position:relative;
+    width:64px; height:64px;
+    border-radius:9px;
+    overflow:hidden;
+    border:1px solid var(--border);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .image-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .image-thumb .thumb-del{
+    position:absolute; top:2px; right:2px;
+    width:18px; height:18px;
+    border-radius:50%;
+    border:none;
+    background:rgba(15,18,26,.65);
+    color:#fff;
+    font-size:12px;
+    line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .row-thumbs{display:flex; gap:5px; margin-top:6px;}
+  .row-thumbs .mini-thumb{width:34px; height:34px; border-radius:7px; overflow:hidden; border:1px solid var(--border); flex-shrink:0; cursor:pointer;}
+  .row-thumbs .mini-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .row-thumbs .mini-more{
+    width:34px; height:34px; border-radius:7px;
+    background:var(--surface-2); color:var(--ink-faint);
+    font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  #imageLightbox{z-index:60; background:rgba(10,12,18,.88); align-items:center;}
+  .lightbox-inner{position:relative; max-width:94vw; max-height:88vh;}
+  .lightbox-inner img{max-width:94vw; max-height:88vh; display:block; border-radius:8px;}
+  .lightbox-close{
+    position:absolute; top:-14px; right:-14px;
+    width:32px; height:32px; border-radius:50%;
+    border:none; background:var(--surface); color:var(--ink);
+    font-size:18px; cursor:pointer; box-shadow:var(--shadow);
+  }
   .assignee-picker-btn{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
     border:1px solid var(--border);
@@ -784,6 +843,12 @@
       <textarea id="noteBodyInput" placeholder="共有しておきたい内容を書きましょう"></textarea>
     </div>
     <label class="toggle-done"><input type="checkbox" id="noteVisInput" checked> 公開する(チェックを外すと自分だけに表示)</label>
+    <div class="field">
+      <label>画像</label>
+      <div class="dropzone" id="noteDropzone">画像をドラッグ＆ドロップ（タップして選択も可能）</div>
+      <input type="file" id="noteImageInput" accept="image/*" multiple hidden>
+      <div class="image-thumbs" id="noteImageThumbs"></div>
+    </div>
     <div class="helptext" id="noteMetaText"></div>
     <div class="sheet-actions">
       <button class="btn danger" id="noteDeleteBtn" hidden>削除</button>
@@ -819,12 +884,26 @@
       <label>完了状況</label>
       <div id="taskAssigneeChecks"></div>
     </div>
+    <div class="field">
+      <label>画像</label>
+      <div class="dropzone" id="taskDropzone">画像をドラッグ＆ドロップ（タップして選択も可能）</div>
+      <input type="file" id="taskImageInput" accept="image/*" multiple hidden>
+      <div class="image-thumbs" id="taskImageThumbs"></div>
+    </div>
     <div class="helptext" id="taskMetaText"></div>
     <div class="sheet-actions">
       <button class="btn danger" id="taskDeleteBtn" hidden>削除</button>
       <button class="btn ghost" id="taskCancelBtn">キャンセル</button>
       <button class="btn primary" id="taskSaveBtn">保存</button>
     </div>
+  </div>
+</div>
+
+<!-- Image lightbox: tap any attached-image thumbnail to see it full size -->
+<div class="overlay" id="imageLightbox">
+  <div class="lightbox-inner">
+    <button class="lightbox-close" id="lightboxCloseBtn" aria-label="閉じる">×</button>
+    <img id="lightboxImg" alt="">
   </div>
 </div>
 
@@ -959,6 +1038,145 @@ const db = getFirestore(fbApp);
     return esc(text.slice(0,idx)) + "<mark>" + esc(text.slice(idx, idx+q.length)) + "</mark>" + esc(text.slice(idx+q.length));
   }
 
+  /* ---------------- image attachments ----------------
+     Images are stored directly on the note/task document as compressed
+     base64 data URLs — there's no Firebase Storage set up for this
+     project, and Firestore documents are capped at 1MB, so every image is
+     downscaled and re-compressed client-side before it's ever attached,
+     and a note/task can hold at most a handful of them. This keeps image
+     attachments working with the Firestore rules and setup that already
+     exist, at the cost of some quality/resolution on large photos. */
+  var MAX_IMAGES_PER_ITEM = 4;
+  var MAX_SOURCE_FILE_BYTES = 20 * 1024 * 1024; // refuse to even try decoding anything absurdly large
+  var MAX_IMAGE_DATAURL_CHARS = 320000;   // ~240KB raw per image, after compression
+  var MAX_TOTAL_IMAGE_DATAURL_CHARS = 700000; // ~525KB raw total, well under Firestore's 1MB/doc cap
+
+  // Downscales + re-compresses one image File into a JPEG data URL, trying
+  // progressively smaller/lower-quality passes until it fits the per-image
+  // budget. Resolves to null if the file isn't a usable image or never
+  // fits even at the smallest pass.
+  function compressImageFile(file){
+    return new Promise(function(resolve){
+      if(!file || file.type.indexOf("image/") !== 0 || file.size > MAX_SOURCE_FILE_BYTES){
+        resolve(null);
+        return;
+      }
+      var objectUrl = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function(){
+        URL.revokeObjectURL(objectUrl);
+        var passes = [
+          { maxDim: 1400, quality: 0.75 },
+          { maxDim: 1100, quality: 0.6 },
+          { maxDim: 800,  quality: 0.5 },
+          { maxDim: 560,  quality: 0.42 }
+        ];
+        var result = null;
+        for(var i=0; i<passes.length; i++){
+          var p = passes[i];
+          var scale = Math.min(1, p.maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+          var w = Math.max(1, Math.round(img.naturalWidth * scale));
+          var h = Math.max(1, Math.round(img.naturalHeight * scale));
+          var canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          var ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#fff"; // JPEG has no transparency — flatten onto white
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          var dataUrl = canvas.toDataURL("image/jpeg", p.quality);
+          if(dataUrl.length <= MAX_IMAGE_DATAURL_CHARS){ result = dataUrl; break; }
+          if(i === passes.length - 1) result = null;
+        }
+        resolve(result);
+      };
+      img.onerror = function(){ URL.revokeObjectURL(objectUrl); resolve(null); };
+      img.src = objectUrl;
+    });
+  }
+  function totalImageChars(arr){
+    return (arr||[]).reduce(function(sum, u){ return sum + (u ? u.length : 0); }, 0);
+  }
+  // Shared handler for both the note and task image pickers: compresses
+  // every dropped/selected file, enforces the per-item count and combined
+  // size budgets, and reports (via alert, consistent with the rest of this
+  // app's validation) anything that had to be skipped.
+  function handleImageFiles(fileList, images, rerender){
+    var files = Array.from(fileList || []).filter(function(f){ return f.type.indexOf("image/") === 0; });
+    if(!files.length) return;
+    var skippedCount = false, skippedSize = false, skippedBad = false;
+    var chain = Promise.resolve();
+    files.forEach(function(file){
+      chain = chain.then(function(){
+        if(images.length >= MAX_IMAGES_PER_ITEM){ skippedCount = true; return; }
+        return compressImageFile(file).then(function(dataUrl){
+          if(!dataUrl){ skippedBad = true; return; }
+          if(totalImageChars(images) + dataUrl.length > MAX_TOTAL_IMAGE_DATAURL_CHARS){ skippedSize = true; return; }
+          images.push(dataUrl);
+          rerender();
+        });
+      });
+    });
+    chain.then(function(){
+      if(skippedCount) alert("画像は1件につき最大"+MAX_IMAGES_PER_ITEM+"枚までです。");
+      if(skippedSize) alert("画像の合計サイズが大きすぎるため、一部を追加できませんでした。枚数を減らすか、別の画像をお試しください。");
+      if(skippedBad) alert("読み込めない画像がありました（対応していない形式か、サイズが大きすぎる可能性があります）。");
+    });
+  }
+  function imageThumbsHtml(images){
+    return images.map(function(url, i){
+      return '<div class="image-thumb" data-i="'+i+'"><img src="'+url+'" alt=""><button type="button" class="thumb-del" data-i="'+i+'" aria-label="削除">×</button></div>';
+    }).join("");
+  }
+  // Wires one note/task image field (dropzone + hidden file input + thumb
+  // grid) to a mutable `images` array and a `rerender` callback that
+  // re-renders that field's thumbnail grid after any change.
+  function setupImageField(zoneId, inputId, thumbsId, images, rerender, isDisabled){
+    var zone = $(zoneId), input = $(inputId);
+    zone.addEventListener("click", function(){ if(!isDisabled()) input.click(); });
+    zone.addEventListener("dragover", function(ev){
+      if(isDisabled()) return;
+      ev.preventDefault();
+      zone.classList.add("dragover");
+    });
+    zone.addEventListener("dragleave", function(){ zone.classList.remove("dragover"); });
+    zone.addEventListener("drop", function(ev){
+      ev.preventDefault();
+      zone.classList.remove("dragover");
+      if(isDisabled()) return;
+      handleImageFiles(ev.dataTransfer && ev.dataTransfer.files, images, rerender);
+    });
+    input.addEventListener("change", function(){
+      handleImageFiles(input.files, images, rerender);
+      input.value = "";
+    });
+    $(thumbsId).addEventListener("click", function(ev){
+      var delBtn = ev.target.closest(".thumb-del");
+      if(delBtn){
+        images.splice(Number(delBtn.dataset.i), 1);
+        rerender();
+        return;
+      }
+      var thumb = ev.target.closest(".image-thumb");
+      if(thumb) openImageLightbox(images[Number(thumb.dataset.i)]);
+    });
+  }
+  function openImageLightbox(url){
+    if(!url) return;
+    $("lightboxImg").src = url;
+    $("imageLightbox").classList.add("show");
+  }
+  function closeImageLightbox(){
+    $("imageLightbox").classList.remove("show");
+    $("lightboxImg").src = "";
+  }
+  $("lightboxCloseBtn").addEventListener("click", closeImageLightbox);
+  $("imageLightbox").addEventListener("click", function(ev){
+    if(ev.target.id === "imageLightbox") closeImageLightbox();
+  });
+
+  function renderNoteImageThumbs(){ $("noteImageThumbs").innerHTML = imageThumbsHtml(editingNoteImages); }
+  function renderTaskImageThumbs(){ $("taskImageThumbs").innerHTML = imageThumbsHtml(editingTaskImages); }
+
   /* ---------------- account state ---------------- */
   var currentUid = null;
   var userName = "";
@@ -980,6 +1198,11 @@ const db = getFirestore(fbApp);
   var editingAssigneesSnapshot = [];
   var editingSelectedAssignees = []; // [{uid, name}, ...] currently checked in the picker
   var assigneeDropdownOpen = false;
+  var editingNoteImages = [];  // data URLs attached in the note editor (mutated in place — never reassigned)
+  var editingTaskImages = [];  // same, for the task editor
+  var taskImagesEditable = true; // whether the task image field accepts changes right now
+  setupImageField("noteDropzone", "noteImageInput", "noteImageThumbs", editingNoteImages, renderNoteImageThumbs, function(){ return false; });
+  setupImageField("taskDropzone", "taskImageInput", "taskImageThumbs", editingTaskImages, renderTaskImageThumbs, function(){ return !taskImagesEditable; });
   var connTimer = null;
   var unsubs = [];
 
@@ -1134,6 +1357,19 @@ const db = getFirestore(fbApp);
   var LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
   var GRIP_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.8"/><circle cx="16" cy="6" r="1.8"/><circle cx="8" cy="12" r="1.8"/><circle cx="16" cy="12" r="1.8"/><circle cx="8" cy="18" r="1.8"/><circle cx="16" cy="18" r="1.8"/></svg>';
 
+  // Small thumbnail strip shown under a note/task when it has images
+  // attached — up to 3 previews plus a "+N" tile for the rest. Tapping one
+  // opens the full-size lightbox instead of the note/task editor.
+  function rowThumbsHtml(images){
+    if(!images || !images.length) return "";
+    var shown = images.slice(0,3);
+    var extra = images.length - shown.length;
+    var html = '<div class="row-thumbs">' + shown.map(function(u, i){
+      return '<div class="mini-thumb" data-img-i="'+i+'"><img src="'+u+'" alt=""></div>';
+    }).join("");
+    if(extra > 0) html += '<div class="mini-more">+'+extra+'</div>';
+    return html + '</div>';
+  }
   function noteCardHtml(id, n){
     var body = (n.body||"").trim();
     var lock = n.visibility === "private" ? '<span class="lock-badge">'+LOCK_SVG+'</span>' : "";
@@ -1141,6 +1377,7 @@ const db = getFirestore(fbApp);
       '<div class="n-head"><div class="n-title">'+esc(n.title||"(無題)")+'</div>' +
         '<span class="drag-handle" title="ドラッグで並び替え">'+GRIP_SVG+'</span></div>' +
       '<div class="n-body">'+esc(body)+'</div>' +
+      rowThumbsHtml(n.images) +
       '<div class="n-foot"><span class="foot-left">'+lock+'<span>'+esc(n.authorName||"")+'</span></span><span>'+fmtRelative(n.updatedAt)+'</span></div>' +
       '</div>';
   }
@@ -1180,7 +1417,16 @@ const db = getFirestore(fbApp);
     $("notesEmpty").hidden = items.length !== 0;
     wrap.innerHTML = items.map(function(e){ return noteCardHtml(e[0], e[1]); }).join("");
     wrap.querySelectorAll(".note-card").forEach(function(el){
-      el.addEventListener("click", function(){ openNoteEditor(el.dataset.id); });
+      el.addEventListener("click", function(ev){
+        var thumb = ev.target.closest(".mini-thumb");
+        if(thumb){
+          ev.stopPropagation();
+          var n = notesMap.get(el.dataset.id);
+          if(n) openImageLightbox((n.images||[])[Number(thumb.dataset.imgI)]);
+          return;
+        }
+        openNoteEditor(el.dataset.id);
+      });
     });
     wrap.querySelectorAll(".drag-handle").forEach(function(el){
       el.addEventListener("click", function(ev){ ev.stopPropagation(); });
@@ -1218,6 +1464,7 @@ const db = getFirestore(fbApp);
       '<div class="task-main">' +
         '<div class="task-title">'+esc(t.title||"(無題)")+'</div>' +
         (meta ? '<div class="task-meta">'+meta+'</div>' : '') +
+        rowThumbsHtml(t.images) +
         '<div class="task-times">'+esc(times)+'</div>' +
       '</div>' +
       '<span class="drag-handle" title="ドラッグで並び替え">'+GRIP_SVG+'</span>' +
@@ -1281,6 +1528,12 @@ const db = getFirestore(fbApp);
     document.querySelectorAll(".task-row").forEach(function(el){
       el.addEventListener("click", function(ev){
         if(ev.target.closest(".task-check") || ev.target.closest(".drag-handle")) return;
+        var thumb = ev.target.closest(".mini-thumb");
+        if(thumb){
+          var t = tasksMap.get(el.dataset.id);
+          if(t) openImageLightbox((t.images||[])[Number(thumb.dataset.imgI)]);
+          return;
+        }
         openTaskEditor(el.dataset.id);
       });
     });
@@ -1411,6 +1664,9 @@ const db = getFirestore(fbApp);
     $("noteTitleInput").value = n ? n.title || "" : "";
     $("noteBodyInput").value = n ? n.body || "" : "";
     $("noteVisInput").checked = !(n && n.visibility === "private");
+    editingNoteImages.length = 0;
+    (n && n.images || []).forEach(function(u){ editingNoteImages.push(u); });
+    renderNoteImageThumbs();
     $("noteDeleteBtn").hidden = !id;
     $("noteMetaText").textContent = n ? (n.authorName||"") + " が作成 ・ 更新: " + fmtRelative(n.updatedAt) : "";
     $("noteOverlay").classList.add("show");
@@ -1435,6 +1691,11 @@ const db = getFirestore(fbApp);
     editingAssigneesSnapshot = assignees;
     editingCompletedBy = t ? Object.assign({}, taskCompletedByMap(t)) : {};
     renderTaskAssigneeChecks(editable);
+    taskImagesEditable = editable;
+    editingTaskImages.length = 0;
+    (t && t.images || []).forEach(function(u){ editingTaskImages.push(u); });
+    renderTaskImageThumbs();
+    $("taskDropzone").classList.toggle("disabled", !editable);
     $("taskDeleteBtn").hidden = !id || !editable;
     $("taskSaveBtn").hidden = !editable;
     var metaBits = [];
@@ -1543,18 +1804,19 @@ const db = getFirestore(fbApp);
   function saveNote(){
     var title = $("noteTitleInput").value.trim();
     var body = $("noteBodyInput").value.trim();
-    if(!title && !body) { closeNoteEditor(); return; }
+    if(!title && !body && !editingNoteImages.length) { closeNoteEditor(); return; }
     ensureAccount(function(){
       var ts = nowIso();
       var visibility = $("noteVisInput").checked ? "public" : "private";
+      var images = editingNoteImages.slice();
       if(editingNoteId){
         updateDoc(doc(db,"notes",editingNoteId), {
-          title: title, body: body, visibility: visibility,
+          title: title, body: body, visibility: visibility, images: images,
           ownerUid: currentUid, ownerName: userName, updatedAt: ts
         }).catch(function(){});
       } else {
         addDoc(collection(db,"notes"), {
-          title: title, body: body, visibility: visibility,
+          title: title, body: body, visibility: visibility, images: images,
           authorUid: currentUid, authorName: userName,
           ownerUid: currentUid, ownerName: userName,
           order: Date.now(), createdAt: ts, updatedAt: ts
@@ -1605,6 +1867,7 @@ const db = getFirestore(fbApp);
         assigneeUid: assigneeUids[0] || "",
         assigneeName: assigneeNames[0] || "",
         detail: $("taskDetailInput").value.trim(),
+        images: editingTaskImages.slice(),
         completedBy: completedBy,
         done: allDone,
         completedAt: completedAt,
