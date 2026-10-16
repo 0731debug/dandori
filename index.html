@@ -950,6 +950,22 @@
       <div class="sheet-actions">
         <button class="btn primary" id="acctNameSaveBtn" style="flex:1;">表示名を保存</button>
       </div>
+      <div class="field">
+        <label for="acctCurrentPwInput">現在のパスワード</label>
+        <input id="acctCurrentPwInput" type="password" autocomplete="current-password" placeholder="確認のため入力してください">
+      </div>
+      <div class="field">
+        <label for="acctNewPwInput">新しいパスワード</label>
+        <input id="acctNewPwInput" type="password" maxlength="60" autocomplete="new-password" placeholder="6文字以上">
+      </div>
+      <div class="field">
+        <label for="acctNewPwConfirmInput">新しいパスワード（確認）</label>
+        <input id="acctNewPwConfirmInput" type="password" maxlength="60" autocomplete="new-password" placeholder="もう一度入力してください">
+      </div>
+      <div class="helptext" id="acctPwEditMsg" hidden></div>
+      <div class="sheet-actions">
+        <button class="btn primary" id="acctPwSaveBtn" style="flex:1;">パスワードを変更</button>
+      </div>
       <div class="sheet-actions">
         <button class="btn ghost" id="acctCloseBtn" style="flex:1;">閉じる</button>
         <button class="btn danger" id="acctLogoutBtn">ログアウト</button>
@@ -966,7 +982,8 @@
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@12.19.0/app/+esm";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  onAuthStateChanged, signOut, sendPasswordResetEmail, updateProfile
+  onAuthStateChanged, signOut, sendPasswordResetEmail, updateProfile,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider
 } from "https://cdn.jsdelivr.net/npm/firebase@12.19.0/auth/+esm";
 import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
@@ -2041,6 +2058,12 @@ const db = getFirestore(fbApp);
       $("acctNameEditMsg").hidden = true;
       $("acctNameSaveBtn").disabled = false;
       $("acctNameSaveBtn").textContent = "表示名を保存";
+      $("acctCurrentPwInput").value = "";
+      $("acctNewPwInput").value = "";
+      $("acctNewPwConfirmInput").value = "";
+      $("acctPwEditMsg").hidden = true;
+      $("acctPwSaveBtn").disabled = false;
+      $("acctPwSaveBtn").textContent = "パスワードを変更";
       $("acctLoggedInView").hidden = false;
       $("acctLoggedOutView").hidden = true;
     } else {
@@ -2101,6 +2124,44 @@ const db = getFirestore(fbApp);
   }
   $("acctNameSaveBtn").addEventListener("click", saveDisplayName);
 
+  function showPwEditMsg(msg, ok){
+    $("acctPwEditMsg").textContent = msg;
+    $("acctPwEditMsg").style.color = ok ? "var(--success)" : "var(--warn)";
+    $("acctPwEditMsg").hidden = false;
+  }
+  // Changes your login password. Firebase requires you to have signed in
+  // "recently" before it will allow a password change, so this always
+  // re-confirms your current password first (reauthenticateWithCredential)
+  // rather than only falling back to that on an auth/requires-recent-login
+  // error — simpler, and it doubles as "prove it's really you" before a
+  // security-sensitive change.
+  function changePassword(){
+    if(!currentUid || !auth.currentUser) return;
+    var currentPw = $("acctCurrentPwInput").value;
+    var newPw = $("acctNewPwInput").value;
+    var confirmPw = $("acctNewPwConfirmInput").value;
+    if(!currentPw){ showPwEditMsg("現在のパスワードを入力してください。", false); return; }
+    if(newPw.length < 6){ showPwEditMsg("新しいパスワードは6文字以上にしてください。", false); return; }
+    if(newPw !== confirmPw){ showPwEditMsg("新しいパスワード（確認）が一致しません。", false); return; }
+    var email = auth.currentUser.email;
+    if(!email){ showPwEditMsg("メールアドレスが確認できないため変更できません。", false); return; }
+    $("acctPwSaveBtn").disabled = true; $("acctPwSaveBtn").textContent = "変更中...";
+    var cred = EmailAuthProvider.credential(email, currentPw);
+    reauthenticateWithCredential(auth.currentUser, cred).then(function(){
+      return updatePassword(auth.currentUser, newPw);
+    }).then(function(){
+      $("acctCurrentPwInput").value = "";
+      $("acctNewPwInput").value = "";
+      $("acctNewPwConfirmInput").value = "";
+      showPwEditMsg("パスワードを変更しました。", true);
+      $("acctPwSaveBtn").disabled = false; $("acctPwSaveBtn").textContent = "パスワードを変更";
+    }).catch(function(err){
+      showPwEditMsg(authErrorMessage(err), false);
+      $("acctPwSaveBtn").disabled = false; $("acctPwSaveBtn").textContent = "パスワードを変更";
+    });
+  }
+  $("acctPwSaveBtn").addEventListener("click", changePassword);
+
   function authErrorMessage(err){
     var code = (err && err.code) || "";
     var map = {
@@ -2111,7 +2172,8 @@ const db = getFirestore(fbApp);
       "auth/email-already-in-use": "そのメールアドレスは既に登録されています。「ログイン」タブからログインしてください。",
       "auth/weak-password": "パスワードは6文字以上にしてください。",
       "auth/too-many-requests": "試行回数が多すぎます。しばらく待ってからお試しください。",
-      "auth/network-request-failed": "通信エラーが発生しました。通信状況を確認してもう一度お試しください。"
+      "auth/network-request-failed": "通信エラーが発生しました。通信状況を確認してもう一度お試しください。",
+      "auth/requires-recent-login": "セキュリティのため、もう一度ログインし直してからお試しください。"
     };
     return map[code] || ("エラーが発生しました。もう一度お試しください。(" + (code || "unknown") + ")");
   }
