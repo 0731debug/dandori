@@ -867,7 +867,8 @@
       <label for="taskTitleInput">タスク内容</label>
       <input id="taskTitleInput" type="text" maxlength="120" placeholder="例）請求書を送付する">
     </div>
-    <div class="field">
+    <label class="toggle-done"><input type="checkbox" id="taskVisInput"> 個人用（自分だけに表示・担当者は自分のみ）</label>
+    <div class="field" id="taskAssigneeField">
       <label>担当者</label>
       <button type="button" class="assignee-picker-btn placeholder" id="assigneePickerBtn">
         <span id="assigneePickerLabel">担当者を選択（未選択の場合は自分）</span>
@@ -1232,8 +1233,12 @@ const db = getFirestore(fbApp);
   // Tasks are visible to the whole signed-in team (so the "全員分" tab can
   // show everyone's tasks) — editing/deleting a task still requires being
   // its assignee or author, enforced server-side by the Firestore rules.
+  // The exception is a private/personal task (visibility: "private"),
+  // which only its own creator can see at all, mirroring private notes.
   function canSeeTask(t){
-    return !!currentUid;
+    if(!currentUid) return false;
+    if(t.visibility === "private") return isMineUid(t.authorUid);
+    return true;
   }
   // Whether a task involves ME specifically (I'm an assignee on it, or I'm
   // the one who requested it) — used for the unread-count badge, which
@@ -1352,6 +1357,10 @@ const db = getFirestore(fbApp);
       var unassigned = assignees.length === 0;
       if(tasksFilter === "mine") return isAssignee || (unassigned && isMineUid(t.authorUid));
       if(tasksFilter === "requested") return isMineUid(t.authorUid) && !isAssignee && assignees.length > 0;
+      // "all" ("全員分") is the team-wide view, so personal/private tasks
+      // never appear there — even for their own owner — exactly like
+      // private notes stay out of the "公開" notes filter.
+      if(t.visibility === "private") return false;
       // "all": every task the whole team has, regardless of who's on it —
       // optionally narrowed down to one specific person via the dropdown.
       if(allAssigneeFilter) return assignees.some(function(a){ return a.uid === allAssigneeFilter; });
@@ -1463,6 +1472,9 @@ const db = getFirestore(fbApp);
     var assignees = taskAssignees(t);
     var completedBy = taskCompletedByMap(t);
     var meta = "";
+    if(t.visibility === "private"){
+      meta += '<span class="lock-badge">'+LOCK_SVG+'</span>';
+    }
     var authorIsAssignee = assignees.some(function(a){ return a.uid === t.authorUid; });
     if(t.authorName && assignees.length && !authorIsAssignee){
       meta += '<span class="pill from">'+esc(t.authorName)+'より</span>';
@@ -1657,8 +1669,9 @@ const db = getFirestore(fbApp);
         var names = taskAssignees(r.data).map(function(a){ return a.name; }).filter(Boolean);
         if(names.length) bits.push(esc(names.join("、")));
         if(r.data.done) bits.push("完了");
+        var taskLockPill = r.data.visibility === "private" ? '<span class="pill">自分だけ</span>' : "";
         return '<div class="result-row" data-type="task" data-id="'+r.id+'">' +
-          '<div class="result-top"><span class="pill type-task">タスク</span><span class="result-title">'+highlight(r.data.title||"(無題)", searchQuery)+'</span></div>' +
+          '<div class="result-top"><span class="pill type-task">タスク</span>'+taskLockPill+'<span class="result-title">'+highlight(r.data.title||"(無題)", searchQuery)+'</span></div>' +
           '<div class="result-snippet">'+esc(bits.join(" ・ "))+'</div>' +
           '</div>';
       }
@@ -1702,9 +1715,12 @@ const db = getFirestore(fbApp);
     $("taskTitleInput").disabled = !editable;
     $("taskDetailInput").disabled = !editable;
     editingSelectedAssignees = assignees.map(function(a){ return { uid: a.uid, name: a.name }; });
+    $("taskVisInput").checked = t ? t.visibility === "private" : false;
+    $("taskVisInput").disabled = !editable;
     $("assigneePickerBtn").disabled = !editable;
     closeAssigneeDropdown();
     renderAssigneePickerButton();
+    applyTaskVisibilityUi();
     editingAssigneesSnapshot = assignees;
     editingCompletedBy = t ? Object.assign({}, taskCompletedByMap(t)) : {};
     renderTaskAssigneeChecks(editable);
@@ -1717,6 +1733,7 @@ const db = getFirestore(fbApp);
     $("taskSaveBtn").hidden = !editable;
     var metaBits = [];
     if(t){
+      if(t.visibility === "private") metaBits.push("個人用（自分だけに表示）");
       metaBits.push((t.authorName||"") + "が依頼");
       metaBits.push("依頼: " + (fmtDateTime(t.createdAt) || "-"));
       metaBits.push(t.done && t.completedAt ? "完了: " + fmtDateTime(t.completedAt) : "未完了");
@@ -1736,6 +1753,19 @@ const db = getFirestore(fbApp);
     $("assigneePickerLabel").textContent = assigneePickerLabelText();
     $("assigneePickerBtn").classList.toggle("placeholder", !editingSelectedAssignees.length);
   }
+  // A "個人用" (private) task is always assigned to its own creator only,
+  // so the assignee picker is pointless while that checkbox is on — hide
+  // it and lock the selection down to just yourself.
+  function applyTaskVisibilityUi(){
+    var isPrivate = $("taskVisInput").checked;
+    $("taskAssigneeField").hidden = isPrivate;
+    $("taskAssigneeHelp").hidden = isPrivate;
+    if(isPrivate && currentUid){
+      editingSelectedAssignees = [{ uid: currentUid, name: userName }];
+      renderAssigneePickerButton();
+    }
+  }
+  $("taskVisInput").addEventListener("change", applyTaskVisibilityUi);
   function renderAssigneeDropdown(){
     var wrap = $("assigneeDropdown");
     var opts = buildAssigneeOptions();
@@ -1853,11 +1883,18 @@ const db = getFirestore(fbApp);
     ensureAccount(function(){
       var ts = nowIso();
       var prevTask = editingTaskId ? tasksMap.get(editingTaskId) : null;
+      var visibility = $("taskVisInput").checked ? "private" : "public";
       // The picker only ever lets you check off real, registered teammates,
       // so there's no "name not found" case to handle here any more.
       var assigneeUids = editingSelectedAssignees.map(function(a){ return a.uid; });
       var assigneeNames = editingSelectedAssignees.map(function(a){ return a.name; });
-      if(!assigneeUids.length){
+      if(visibility === "private"){
+        // Personal tasks are always yours alone, regardless of whatever the
+        // picker happened to hold (it's hidden while this is checked, but
+        // enforce it here too rather than trusting the UI state).
+        assigneeUids = [currentUid];
+        assigneeNames = [userName];
+      } else if(!assigneeUids.length){
         // Nobody selected: treat it as your own personal task rather than
         // an unassigned one nobody would ever see.
         assigneeUids = [currentUid];
@@ -1878,6 +1915,7 @@ const db = getFirestore(fbApp);
 
       var fields = {
         title: title,
+        visibility: visibility,
         assigneeUids: assigneeUids,
         assigneeNames: assigneeNames,
         // Back-compat single fields kept in sync with the first assignee.
@@ -2268,14 +2306,49 @@ const db = getFirestore(fbApp);
       mergeNotes();
     }, function(){}));
 
-    // Tasks are readable by the whole signed-in team now (so "全員分" can
-    // show everyone's tasks), so a single listener on the whole collection
-    // replaces the old per-person scoped queries.
-    unsubs.push(onSnapshot(collection(db,"tasks"), function(qs){
+    // Tasks are readable by the whole signed-in team ("全員分"), except for
+    // personal/private tasks which only their own author may read — the
+    // Firestore rule enforces this per-document, so (just like notes) an
+    // unconstrained whole-collection listener can no longer satisfy it. Two
+    // scoped queries are merged client-side instead: every explicitly-public
+    // task, plus every task authored by me (which covers my own private
+    // ones — the rule lets an author always read their own task either way).
+    //
+    // Note: this intentionally queries visibility=="public" rather than
+    // !="private", because Firestore's inequality filters silently exclude
+    // documents missing the field entirely — and tasks created before this
+    // feature existed have no `visibility` field at all. Those legacy tasks
+    // are self-healed below: whenever a batch of my own authored tasks comes
+    // in, any without a `visibility` field is quietly backfilled to
+    // "public" (their only possible meaning before private tasks existed),
+    // so every teammate's history converges on the explicit field the first
+    // time each of them opens the app after this update.
+    var tasksPublicRaw = new Map(), tasksMineRaw = new Map();
+
+    function mergeTasks(){
       tasksMap.clear();
-      qs.forEach(function(d){ tasksMap.set(d.id, d.data()); });
+      tasksPublicRaw.forEach(function(v,k){ tasksMap.set(k,v); });
+      tasksMineRaw.forEach(function(v,k){ tasksMap.set(k,v); });
       markReady();
       safeRenderAll();
+    }
+
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("visibility","==","public")), function(qs){
+      tasksPublicRaw.clear();
+      qs.forEach(function(d){ tasksPublicRaw.set(d.id, d.data()); });
+      mergeTasks();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("authorUid","==",uid)), function(qs){
+      tasksMineRaw.clear();
+      qs.forEach(function(d){
+        var data = d.data();
+        tasksMineRaw.set(d.id, data);
+        if(!data.visibility){
+          updateDoc(doc(db,"tasks",d.id), { visibility: "public" }).catch(function(){});
+        }
+      });
+      mergeTasks();
     }, function(){}));
 
     unsubs.push(onSnapshot(collection(db,"profiles"), function(qs){
@@ -2302,6 +2375,7 @@ const db = getFirestore(fbApp);
         tx.set(taskRef, {
           title: "このタスクをタップして完了にしてみる",
           detail: "チェックをつけると「完了」に移動します。",
+          visibility: "public",
           assigneeUid: "", assigneeName: "", assigneeUids: [], assigneeNames: [], completedBy: {}, done: false, completedAt: "",
           authorUid: uid, authorName: name, order: Date.now(), createdAt: ts, updatedAt: ts
         });
