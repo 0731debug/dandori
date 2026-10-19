@@ -2309,26 +2309,44 @@ const db = getFirestore(fbApp);
     // Tasks are readable by the whole signed-in team ("全員分"), except for
     // personal/private tasks which only their own author may read — the
     // Firestore rule enforces this per-document, so (just like notes) an
-    // unconstrained whole-collection listener can no longer satisfy it. Two
-    // scoped queries are merged client-side instead: every explicitly-public
-    // task, plus every task authored by me (which covers my own private
-    // ones — the rule lets an author always read their own task either way).
+    // unconstrained whole-collection listener can no longer satisfy it.
     //
-    // Note: this intentionally queries visibility=="public" rather than
-    // !="private", because Firestore's inequality filters silently exclude
-    // documents missing the field entirely — and tasks created before this
-    // feature existed have no `visibility` field at all. Those legacy tasks
-    // are self-healed below: whenever a batch of my own authored tasks comes
-    // in, any without a `visibility` field is quietly backfilled to
-    // "public" (their only possible meaning before private tasks existed),
-    // so every teammate's history converges on the explicit field the first
-    // time each of them opens the app after this update.
+    // Querying visibility=="public" alone is not enough: Firestore's
+    // inequality filters (!=) exclude documents missing the field entirely,
+    // and tasks created before this feature existed have no `visibility`
+    // field at all. If we only merged "public" + "authored by me", a task
+    // someone else requested FROM me (where I'm the assignee, not the
+    // author) would vanish the moment this shipped, until *that person*
+    // happened to reopen the app and implicitly backfill it — which is
+    // exactly the bug this fixes. Instead, four scoped queries are merged,
+    // each one structurally guaranteed by its own filter to satisfy one
+    // branch of the Firestore rule regardless of whether `visibility` has
+    // been backfilled yet:
+    //   1) visibility == "public"        → explicitly public tasks
+    //   2) authorUid == me               → everything I requested (incl. my private ones)
+    //   3) assigneeUids array-contains me → multi-assignee tasks naming me
+    //   4) assigneeUid == me             → legacy single-assignee tasks naming me
+    // Whichever of (2)-(4) a task is picked up by, if it's still missing
+    // `visibility` it's quietly backfilled to "public" (the only thing it
+    // could have meant before private tasks existed), so the whole
+    // collection converges on the explicit field over time.
     var tasksPublicRaw = new Map(), tasksMineRaw = new Map();
+    var tasksAssigneeArrRaw = new Map(), tasksAssigneeOldRaw = new Map();
+
+    function backfillVisibilityIfMissing(d){
+      var data = d.data();
+      if(!data.visibility){
+        updateDoc(doc(db,"tasks",d.id), { visibility: "public" }).catch(function(){});
+      }
+      return data;
+    }
 
     function mergeTasks(){
       tasksMap.clear();
       tasksPublicRaw.forEach(function(v,k){ tasksMap.set(k,v); });
       tasksMineRaw.forEach(function(v,k){ tasksMap.set(k,v); });
+      tasksAssigneeArrRaw.forEach(function(v,k){ tasksMap.set(k,v); });
+      tasksAssigneeOldRaw.forEach(function(v,k){ tasksMap.set(k,v); });
       markReady();
       safeRenderAll();
     }
@@ -2341,13 +2359,19 @@ const db = getFirestore(fbApp);
 
     unsubs.push(onSnapshot(query(collection(db,"tasks"), where("authorUid","==",uid)), function(qs){
       tasksMineRaw.clear();
-      qs.forEach(function(d){
-        var data = d.data();
-        tasksMineRaw.set(d.id, data);
-        if(!data.visibility){
-          updateDoc(doc(db,"tasks",d.id), { visibility: "public" }).catch(function(){});
-        }
-      });
+      qs.forEach(function(d){ tasksMineRaw.set(d.id, backfillVisibilityIfMissing(d)); });
+      mergeTasks();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUids","array-contains",uid)), function(qs){
+      tasksAssigneeArrRaw.clear();
+      qs.forEach(function(d){ tasksAssigneeArrRaw.set(d.id, backfillVisibilityIfMissing(d)); });
+      mergeTasks();
+    }, function(){}));
+
+    unsubs.push(onSnapshot(query(collection(db,"tasks"), where("assigneeUid","==",uid)), function(qs){
+      tasksAssigneeOldRaw.clear();
+      qs.forEach(function(d){ tasksAssigneeOldRaw.set(d.id, backfillVisibilityIfMissing(d)); });
       mergeTasks();
     }, function(){}));
 
